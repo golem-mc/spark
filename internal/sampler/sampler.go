@@ -58,6 +58,10 @@ type Settings struct {
 	// OnlyTicksOver is set.
 	TicksOver     time.Duration
 	OnlyTicksOver bool
+	// Mode is what is measured; LiveOnly keeps, in Allocation mode, only
+	// the growth of the bytes still in use (--alloc-live-only).
+	Mode     Mode
+	LiveOnly bool
 }
 
 // Env is what a sampler needs from the server.
@@ -122,7 +126,7 @@ type pendingSample struct {
 	group  string
 	name   string
 	stack  []Frame
-	micros int64
+	value  int64
 	window int
 }
 
@@ -140,8 +144,15 @@ func Start(settings Settings, env Env) (*Sampler, error) {
 		interval = DefaultInterval
 	}
 	hz := max(1, int(time.Second/interval))
-	if !cpuBusy.CompareAndSwap(false, true) {
-		return nil, ErrBusy
+	var src source
+	var err error
+	if settings.Mode == Execution {
+		src, err = newCPUSource(hz)
+	} else {
+		src, err = newDeltaSource(settings.Mode, settings.LiveOnly)
+	}
+	if err != nil {
+		return nil, err
 	}
 	now := time.Now()
 	s := &Sampler{
@@ -154,38 +165,14 @@ func Start(settings Settings, env Env) (*Sampler, error) {
 	}
 	s.window.Store(int64(windowOf(now)))
 	s.windowStarts[windowOf(now)] = now
-	seg, err := s.startSegment()
-	if err != nil {
-		cpuBusy.Store(false)
-		return nil, err
-	}
-	go s.run(seg)
+	go s.run(src)
 	return s, nil
-}
-
-// segment is one CPU profile, from start to stop.
-type segment struct{ buf *syncBuffer }
-
-func (s *Sampler) startSegment() (*segment, error) {
-	if s.hz != 100 {
-		// StartCPUProfile sets 100 Hz; a rate set first wins, with a notice.
-		runtime.SetCPUProfileRate(s.hz)
-	}
-	seg := &segment{buf: &syncBuffer{}}
-	if err := pprof.StartCPUProfile(seg.buf); err != nil {
-		if s.hz != 100 {
-			runtime.SetCPUProfileRate(0)
-		}
-		return nil, ErrBusy
-	}
-	return seg, nil
 }
 
 // run is the sampler's goroutine: it rotates the profile at each window
 // boundary and on demand, and stops it at the end.
-func (s *Sampler) run(seg *segment) {
+func (s *Sampler) run(src source) {
 	defer close(s.done)
-	defer cpuBusy.Store(false)
 	defer func() {
 		if s.env.OnStop != nil {
 			s.env.OnStop()
@@ -195,7 +182,7 @@ func (s *Sampler) run(seg *segment) {
 	defer ticker.Stop()
 	// A rate other than the runtime's rotates only when asked, so the
 	// runtime's notice is not printed every minute.
-	rotateOnWindow := s.hz == 100
+	rotateOnWindow := s.hz == 100 || s.settings.Mode != Execution
 	for {
 		var reply chan error
 		cancelled, stop := false, false
@@ -211,19 +198,20 @@ func (s *Sampler) run(seg *segment) {
 		case cancelled = <-s.stopping:
 			stop = true
 		}
-		pprof.StopCPUProfile()
-		err := s.addSegment(seg)
-		if !stop && err == nil {
-			rotated := s.rotateWindow(time.Now())
-			seg, err = s.startSegment()
-			if rotated && err == nil && s.env.OnWindowRotate != nil {
-				s.env.OnWindowRotate()
-			}
+		p, valueType, err := src.collect(stop)
+		if err == nil {
+			err = s.addProfile(p, valueType)
+		}
+		if !stop && err == nil && s.rotateWindow(time.Now()) && s.env.OnWindowRotate != nil {
+			s.env.OnWindowRotate()
 		}
 		if reply != nil {
 			reply <- err
 		}
 		if err != nil {
+			if !stop {
+				_, _, _ = src.collect(true) // releases the source
+			}
 			s.err = err
 			s.stopped.Store(true)
 			if s.env.OnComplete != nil {
@@ -433,23 +421,23 @@ func (s *Sampler) TotalTicks() int {
 
 // addSegment parses a stopped segment's profile into the trees, under the
 // current window.
-func (s *Sampler) addSegment(seg *segment) error {
-	data := seg.buf.Bytes()
-	if len(data) == 0 {
+func (s *Sampler) addProfile(p *profile.Profile, valueType string) error {
+	if p == nil {
 		return nil
 	}
-	p, err := profile.ParseData(data)
-	if err != nil {
-		return err
-	}
-	cpu := -1
+	index := -1
 	for i, st := range p.SampleType {
-		if st.Type == "cpu" {
-			cpu = i
+		if st.Type == valueType {
+			index = i
 		}
 	}
-	if cpu < 0 {
-		return errors.New("sampler: the CPU profile has no cpu samples")
+	if index < 0 {
+		return errors.New("sampler: the profile has no " + valueType + " samples")
+	}
+	// CPU time is logged in microseconds, bytes and lock delays as they are.
+	divisor := int64(1)
+	if s.settings.Mode == Execution {
+		divisor = 1000
 	}
 	root := ""
 	if r := s.tickRoot.Load(); r != nil {
@@ -467,7 +455,7 @@ func (s *Sampler) addSegment(seg *segment) error {
 	}
 	samples := make([]pendingSample, 0, len(p.Sample))
 	for _, sample := range p.Sample {
-		if ps, ok := s.describe(sample, sample.Value[cpu]/1000, window, root); ok {
+		if ps, ok := s.describe(sample, sample.Value[index]/divisor, window, root); ok {
 			samples = append(samples, ps)
 		}
 	}
@@ -477,7 +465,7 @@ func (s *Sampler) addSegment(seg *segment) error {
 	s.pprofs[window] = merged
 	if !s.settings.OnlyTicksOver {
 		for _, ps := range samples {
-			s.log(ps.group, ps.name, ps.stack, ps.micros, ps.window)
+			s.log(ps.group, ps.name, ps.stack, ps.value, ps.window)
 		}
 		return nil
 	}
@@ -500,9 +488,9 @@ func (s *Sampler) tickSets() (over map[int64]int, under map[int64]bool) {
 	return maps.Clone(s.overTicks), maps.Clone(s.underTicks)
 }
 
-// describe turns a sample of micros microseconds into the stack and the
+// describe turns a sample of value (see addProfile) into the stack and the
 // thread it is logged under; false for a sample not kept.
-func (s *Sampler) describe(sample *profile.Sample, micros int64, window int, tickRoot string) (pendingSample, bool) {
+func (s *Sampler) describe(sample *profile.Sample, value int64, window int, tickRoot string) (pendingSample, bool) {
 	// Frames run from the innermost call out; a location's lines from the
 	// inlined callee out to its caller.
 	var functions []string
@@ -523,7 +511,11 @@ func (s *Sampler) describe(sample *profile.Sample, micros int64, window int, tic
 	if functions[outer] == "runtime.goexit" && outer > 0 {
 		functions, lines, outer = functions[:outer], lines[:outer], outer-1
 	}
-	name := s.threadName(functions[outer], firstLabel(sample.Label[labelThread]), len(sample.Location) >= maxCPUProfStack, tickRoot)
+	maxStack := maxCPUProfStack
+	if s.settings.Mode != Execution {
+		maxStack = maxProfStack
+	}
+	name := s.threadName(functions[outer], firstLabel(sample.Label[labelThread]), len(sample.Location) >= maxStack, tickRoot)
 	if !s.settings.Threads.includes(name) {
 		return pendingSample{}, false
 	}
@@ -535,7 +527,7 @@ func (s *Sampler) describe(sample *profile.Sample, micros int64, window int, tic
 		stack[i] = Frame{Class: class, Method: method, Line: lines[outer-i], ParentLine: parentLine}
 		parentLine = lines[outer-i]
 	}
-	ps := pendingSample{tick: -1, group: s.settings.Grouper.group(name), name: name, stack: stack, micros: micros, window: window}
+	ps := pendingSample{tick: -1, group: s.settings.Grouper.group(name), name: name, stack: stack, value: value, window: window}
 	if s.settings.OnlyTicksOver {
 		tick, err := strconv.ParseInt(firstLabel(sample.Label[labelTick]), 10, 64)
 		if err != nil {
@@ -549,6 +541,10 @@ func (s *Sampler) describe(sample *profile.Sample, micros int64, window int, tic
 // maxCPUProfStack is the most calls the runtime records for a CPU sample;
 // a stack that long may have lost its outermost calls.
 const maxCPUProfStack = 64
+
+// maxProfStack is the same for the other profiles (GODEBUG profstackdepth's
+// default).
+const maxProfStack = 128
 
 // threadName names the goroutine a sample came from: ServerThread for the
 // tick goroutine, else the function it was started with (root, the
@@ -578,7 +574,7 @@ func firstLabel(values []string) string {
 }
 
 // log adds a sample to its group's tree; call it with mu held.
-func (s *Sampler) log(group, name string, stack []Frame, micros int64, window int) {
+func (s *Sampler) log(group, name string, stack []Frame, value int64, window int) {
 	root, ok := s.threads[group]
 	if !ok {
 		root = newNode(Frame{})
@@ -586,7 +582,7 @@ func (s *Sampler) log(group, name string, stack []Frame, micros int64, window in
 		s.members[group] = map[string]bool{}
 	}
 	s.members[group][name] = true
-	root.log(stack, micros, window)
+	root.log(stack, value, window)
 }
 
 // resolvePending logs the samples of ticks that ended over the threshold,
@@ -595,7 +591,7 @@ func (s *Sampler) log(group, name string, stack []Frame, micros int64, window in
 func (s *Sampler) resolvePending(over map[int64]int, under map[int64]bool) {
 	s.pendingTicked = slices.DeleteFunc(s.pendingTicked, func(p pendingSample) bool {
 		if w, ok := over[p.tick]; ok {
-			s.log(p.group, p.name, p.stack, p.micros, w)
+			s.log(p.group, p.name, p.stack, p.value, w)
 			return true
 		}
 		return under[p.tick]
@@ -628,7 +624,10 @@ func (s *Sampler) Export(opts ExportOptions) *sparkproto.SamplerData {
 		threads = append(threads, thread{s.settings.Grouper.label(group, len(s.members[group])), root})
 	}
 	slices.SortFunc(threads, func(a, b thread) int { return cmp.Compare(a.label, b.label) })
-	enc := newTimeEncoder(windows)
+	// The viewer reads milliseconds, or bytes in allocation mode.
+	// spark: SamplerMode.valueTransformer
+	scale := map[Mode]float64{Execution: 1000, Allocation: 1, Lock: 1e6}[s.settings.Mode]
+	enc := newTimeEncoder(windows, scale)
 	data := &sparkproto.SamplerData{TimeWindowStatistics: map[int32]*sparkproto.WindowStatistics{}}
 	for _, w := range enc.keys {
 		data.TimeWindows = append(data.TimeWindows, int32(w))
@@ -683,10 +682,21 @@ func (s *Sampler) WindowStatistics() map[int32]*sparkproto.WindowStatistics {
 // spark: AbstractSampler.writeMetadataToProto
 func (s *Sampler) Metadata(m *sparkproto.SamplerMetadata) {
 	m.SamplerEngine = sparkproto.SamplerMetadata_ASYNC
-	m.SamplerEngineVersion = "Go " + runtime.Version() + " CPU profiler"
-	m.SamplerMode = sparkproto.SamplerMetadata_EXECUTION
 	m.StartTime = s.start.UnixMilli()
-	m.Interval = int32(s.interval.Microseconds())
+	switch s.settings.Mode {
+	case Allocation:
+		m.SamplerEngineVersion = "Go " + runtime.Version() + " allocation profile"
+		m.SamplerMode = sparkproto.SamplerMetadata_ALLOCATION
+		m.Interval = int32(runtime.MemProfileRate) // bytes
+	case Lock:
+		// Every contention is recorded: no threshold.
+		m.SamplerEngineVersion = "Go " + runtime.Version() + " mutex profile"
+		m.SamplerMode = sparkproto.SamplerMetadata_LOCK
+	default:
+		m.SamplerEngineVersion = "Go " + runtime.Version() + " CPU profiler"
+		m.SamplerMode = sparkproto.SamplerMetadata_EXECUTION
+		m.Interval = int32(s.interval.Microseconds())
+	}
 	m.ThreadDumper = s.settings.Threads.proto()
 	agg := &sparkproto.SamplerMetadata_DataAggregator{Type: sparkproto.SamplerMetadata_DataAggregator_SIMPLE, ThreadGrouper: s.settings.Grouper.proto()}
 	if s.settings.OnlyTicksOver {

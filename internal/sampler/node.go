@@ -23,7 +23,7 @@ type Frame struct {
 // spark: AbstractNode, StackTraceNode, ThreadNode
 type node struct {
 	frame    Frame
-	times    map[int]int64 // window -> microseconds
+	times    map[int]int64 // window -> value: µs of CPU, bytes, or ns of lock delay
 	children map[Frame]*node
 	order    []Frame // children in the order they were first seen
 }
@@ -44,15 +44,15 @@ func (n *node) child(f Frame) *node {
 
 // log adds time to the path from the root through stack, which runs from
 // the outermost call to the innermost. spark: ThreadNode.log
-func (n *node) log(stack []Frame, micros int64, window int) {
+func (n *node) log(stack []Frame, value int64, window int) {
 	if len(stack) == 0 {
 		return
 	}
-	n.times[window] += micros
+	n.times[window] += value
 	cur := n
 	for _, f := range stack[:min(len(stack), maxStackDepth)] {
 		cur = cur.child(f)
-		cur.times[window] += micros
+		cur.times[window] += value
 	}
 }
 
@@ -98,14 +98,15 @@ func (n *node) windows(set map[int]bool) {
 }
 
 // timeEncoder turns a node's times into the proto's array, one value per
-// window in key order, in milliseconds. spark: ProtoTimeEncoder
+// window in key order, in the viewer's unit. spark: ProtoTimeEncoder
 type timeEncoder struct {
 	keys  []int
 	index map[int]int
+	scale float64 // what a logged value is divided by
 }
 
-func newTimeEncoder(windows map[int]bool) *timeEncoder {
-	e := &timeEncoder{index: map[int]int{}}
+func newTimeEncoder(windows map[int]bool, scale float64) *timeEncoder {
+	e := &timeEncoder{index: map[int]int{}, scale: scale}
 	for w := range windows {
 		e.keys = append(e.keys, w)
 	}
@@ -119,7 +120,7 @@ func newTimeEncoder(windows map[int]bool) *timeEncoder {
 func (e *timeEncoder) encode(times map[int]int64) []float64 {
 	out := make([]float64, len(e.keys))
 	for w, t := range times {
-		out[e.index[w]] = float64(t) / 1000
+		out[e.index[w]] = float64(t) / e.scale
 	}
 	return out
 }

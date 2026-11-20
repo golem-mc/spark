@@ -3,7 +3,9 @@ package sampler
 import (
 	"bytes"
 	"io"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -201,5 +203,89 @@ func TestHistoryPruned(t *testing.T) {
 	}
 	if len(s.WindowStatistics()) != 0 || s.WritePprof(io.Discard) == nil {
 		t.Errorf("statistics %v, or pprof samples left", s.WindowStatistics())
+	}
+}
+
+var allocated [][]byte
+
+//go:noinline
+func allocWork() {
+	for range 512 {
+		allocated = append(allocated, make([]byte, 64<<10))
+	}
+}
+
+//go:noinline
+func holdLock(mu *sync.Mutex) {
+	mu.Lock()
+	time.Sleep(2 * time.Millisecond)
+	mu.Unlock()
+}
+
+func findFrame(data *sparkproto.SamplerData, method string) (thread string, value float64) {
+	for _, t := range data.Threads {
+		for _, n := range t.Children {
+			if n.MethodName == method {
+				for _, v := range n.Times {
+					value += v
+				}
+				return t.Name, value
+			}
+		}
+	}
+	return "", 0
+}
+
+func TestAllocation(t *testing.T) {
+	s, err := Start(Settings{Mode: Allocation, Threads: AllThreads()}, Env{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { allocWork(); close(done) }()
+	<-done
+	runtime.GC() // allocations reach the profile at a collection
+	s.Stop(false)
+	allocated = nil
+	data := s.Export(ExportOptions{})
+	thread, size := findFrame(data, "allocWork")
+	if !strings.Contains(thread, "TestAllocation.func") || size < 16<<20 {
+		t.Errorf("allocWork: thread %q, %v bytes; threads %q", thread, size, names(data))
+	}
+	var md sparkproto.SamplerMetadata
+	s.Metadata(&md)
+	if md.SamplerMode != sparkproto.SamplerMetadata_ALLOCATION || md.Interval != int32(runtime.MemProfileRate) {
+		t.Errorf("metadata: %v", &md)
+	}
+}
+
+func TestLock(t *testing.T) {
+	before := runtime.SetMutexProfileFraction(-1)
+	s, err := Start(Settings{Mode: Lock, Threads: AllThreads()}, Env{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 10 {
+				holdLock(&mu)
+			}
+		})
+	}
+	wg.Wait()
+	s.Stop(false)
+	if runtime.SetMutexProfileFraction(-1) != before {
+		t.Error("the mutex profile fraction was not restored")
+	}
+	data := s.Export(ExportOptions{})
+	if _, ms := findFrame(data, "holdLock"); ms <= 1 {
+		t.Errorf("holdLock: %vms of contention; threads %q", ms, names(data))
+	}
+	var md sparkproto.SamplerMetadata
+	s.Metadata(&md)
+	if md.SamplerMode != sparkproto.SamplerMetadata_LOCK {
+		t.Errorf("metadata: %v", &md)
 	}
 }

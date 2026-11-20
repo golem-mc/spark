@@ -92,6 +92,12 @@ threads with `SIGPROF` and records the goroutine's stack and labels.
 - **Plugins.** A frame's class is its package (plus receiver), so the class
   sources map each package to the plugin with the longest `plugin.Info.Module`
   that holds it.
+- **Modes.** A sampler reads a `source`: the CPU profiler, restarted at each
+  read, or, for `--alloc` and `--lock`, the runtime's cumulative `allocs` or
+  `mutex` profile, from which each read takes what every stack gained since
+  the last one. Trees hold microseconds of CPU, bytes, or nanoseconds of
+  delay, and the export scales them to what the viewer reads
+  (spark: `SamplerMode`'s value transformer).
 - **The background profiler** is an ordinary sampler marked `Background`,
   started in `Enable` and again after `/spark profiler stop`. It runs for as
   long as the server does; pruning to 60 windows bounds its trees.
