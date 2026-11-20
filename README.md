@@ -83,15 +83,6 @@ golem-launcher plugin add github.com/golem-mc/spark
 The launcher pins the latest release (or a commit while there is none) in
 `launcher.json` and builds the server with spark included.
 
-### As a ready-built server
-
-```sh
-git clone https://github.com/golem-mc/spark.git
-cd spark
-go build -o spark-server ./cmd/server   # with mise: mise exec -- go build ...
-./spark-server
-```
-
 ## Configuration
 
 spark writes nothing until it needs to; `plugins/spark/config.json` takes
