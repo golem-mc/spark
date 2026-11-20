@@ -40,16 +40,15 @@ Paper finds the same plugin.
   report unless `overrideTpsCommand` is `false`.
 - **`/spark ping`** — the online players' pings now and over the last 15
   minutes; `--player <name>` for one player.
-- **`/spark health`** (alias `healthreport`) — `dashboard` (the default)
-  uploads a health report and keeps it live in the viewer, as the profiler's
-  live viewer does; `upload` uploads a health report
-  to bytebin and prints its link in spark's web viewer: platform, system,
-  memory, GC, TPS/MSPT, ping, players, per-world and per-chunk entity counts, game rules and data packs,
+- **`/spark health`** (alias `healthreport`) — a health report in spark's
+  web viewer: platform, system, memory, GC, TPS/MSPT, ping, players,
+  per-world and per-chunk entity counts, game rules, data packs,
   `server.properties` (without secrets such as `rcon.password` and
   `level-seed`), the plugins, and the last hour of TPS, tick duration, CPU,
-  memory, allocation, world and ping graphs. `show` prints the report in chat;
-  `--memory` adds the runtime's non-heap memory and heap areas, `--network`
-  every interface.
+  memory, allocation, world and ping graphs. `dashboard` (the default) keeps
+  the report live in the viewer, `upload` uploads it once, and `show` prints
+  it in chat, where `--memory` adds the runtime's non-heap memory and heap
+  areas and `--network` every interface.
 - **`/spark tickmonitor`** (alias `tickmonitoring`) — times the ticks for 120
   ticks, then reports every tick more than 100% longer than that average;
   `--threshold <percent>` changes the percentage, `--threshold-tick <ms>`
