@@ -87,7 +87,7 @@ type Sampler struct {
 	mu            sync.Mutex
 	threads       map[string]*node           // group -> tree
 	members       map[string]map[string]bool // group -> names merged into it
-	pprof         *profile.Profile           // every segment merged, for a pprof file
+	pprofs        map[int]*profile.Profile   // window -> its segments merged, for a pprof file
 	windowStarts  map[int]time.Time
 	windowStats   map[int]*sparkproto.WindowStatistics
 	pendingTicked []pendingSample // ticked mode: samples of ticks not yet ended
@@ -143,7 +143,7 @@ func Start(settings Settings, env Env) (*Sampler, error) {
 	s := &Sampler{
 		settings: settings, env: env, interval: interval, hz: hz, start: now,
 		threads: map[string]*node{}, members: map[string]map[string]bool{},
-		windowStarts: map[int]time.Time{}, windowStats: map[int]*sparkproto.WindowStatistics{},
+		windowStarts: map[int]time.Time{}, windowStats: map[int]*sparkproto.WindowStatistics{}, pprofs: map[int]*profile.Profile{},
 		firstTick: -1, lastTick: -1,
 		overTicks: map[int64]int{}, underTicks: map[int64]bool{},
 		stopping: make(chan bool, 1), flush: make(chan chan error), done: make(chan struct{}),
@@ -261,6 +261,16 @@ func (s *Sampler) rotateWindow(now time.Time) {
 	for window := range s.windowStats {
 		if drop(window) {
 			delete(s.windowStats, window)
+		}
+	}
+	for window := range s.windowStarts {
+		if drop(window) {
+			delete(s.windowStarts, window)
+		}
+	}
+	for window := range s.pprofs {
+		if drop(window) {
+			delete(s.pprofs, window)
 		}
 	}
 	s.mu.Unlock()
@@ -431,8 +441,9 @@ func (s *Sampler) addSegment(seg *segment) error {
 	if r := s.tickRoot.Load(); r != nil {
 		root = *r
 	}
+	window := s.currentWindow()
 	s.mu.Lock()
-	previous := s.pprof
+	previous := s.pprofs[window]
 	s.mu.Unlock()
 	merged := p
 	if previous != nil {
@@ -440,7 +451,6 @@ func (s *Sampler) addSegment(seg *segment) error {
 			merged = m
 		}
 	}
-	window := s.currentWindow()
 	samples := make([]pendingSample, 0, len(p.Sample))
 	for _, sample := range p.Sample {
 		if ps, ok := s.describe(sample, sample.Value[cpu]/1000, window, root); ok {
@@ -450,7 +460,7 @@ func (s *Sampler) addSegment(seg *segment) error {
 	over, under := s.tickSets()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.pprof = merged
+	s.pprofs[window] = merged
 	if !s.settings.OnlyTicksOver {
 		for _, ps := range samples {
 			s.log(ps.group, ps.name, ps.stack, ps.micros, ps.window)
@@ -682,10 +692,18 @@ func (s *Sampler) Metadata(m *sparkproto.SamplerMetadata) {
 // goroutine included, with the tick goroutine labelled spark-thread.
 func (s *Sampler) WritePprof(w interface{ Write([]byte) (int, error) }) error {
 	s.mu.Lock()
-	p := s.pprof
+	windows := slices.Sorted(maps.Keys(s.pprofs))
+	var ps []*profile.Profile
+	for _, window := range windows {
+		ps = append(ps, s.pprofs[window])
+	}
 	s.mu.Unlock()
-	if p == nil {
+	if len(ps) == 0 {
 		return errors.New("sampler: no samples yet")
+	}
+	p, err := profile.Merge(ps)
+	if err != nil {
+		return err
 	}
 	return p.Write(w)
 }

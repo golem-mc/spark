@@ -17,6 +17,9 @@ Paper finds the same plugin.
   goroutines (`--thread *` all of them, `--regex` to match names),
   `--combine-all`/`--not-combined` change how they are grouped, and
   `--only-ticks-over <ms>` keeps only the ticks that took at least that long.
+  As in spark, a **background profiler** runs from startup and keeps the
+  last hour: `/spark profiler stop` uploads it, `start` replaces it with the
+  profiler asked for, and it starts again after a `stop`.
   `stop` takes `--comment <text>`, `--separate-parent-calls`, and
   `--save-to-file`, which writes `plugins/spark/profile-<date>.sparkprofile`
   (open it in the viewer) instead of uploading. Golem's tick goroutine is the
@@ -60,8 +63,7 @@ Paper finds the same plugin.
 
 ## Not yet
 
-- The background profiler and the live viewer are being ported. Until the
-  live viewer is, `/spark health` and `/spark health dashboard` upload a
+- The live viewer is being ported. Until it is, `/spark health` and `/spark health dashboard` upload a
   report as `upload` does, and `/spark profiler open` and `trust-viewer` say
   it is not supported.
 - **`/spark profiler --alloc` and `--lock`** (allocation and lock profiling)
@@ -101,6 +103,12 @@ each, as on Java (system properties have no Go counterpart):
 | `bytebinUrl` | `https://spark-usercontent.lucko.me/` | where reports are uploaded |
 | `overrideTpsCommand` | `true` | replace `/tps` with `/spark tps` |
 | `disableResponseBroadcast` | `false` | send command output only to its sender, not to everyone with the permission |
+| `backgroundProfiler` | `true` | run the background profiler; spark writes `true` here the first time |
+| `backgroundProfilerInterval` | `10` | its sampling interval in milliseconds |
+| `backgroundProfilerThreadGrouper` | `by-pool` | `by-pool`, `by-name` or `as-one` |
+| `backgroundProfilerThreadDumper` | `default` | `default` (the server thread), `all`, or goroutine names separated by commas |
+
+`backgroundProfilerEngine` is not read: Go has one profiling engine.
 
 ## Permissions
 
@@ -149,7 +157,10 @@ alias: `spark.profiler`, `spark.tps`, `spark.ping`, `spark.health`,
   the Go runtime print `cannot set cpu profile rate until previous profile has
   finished` once per profile; the rate is set all the same. Only one CPU
   profile can run in a process, so the profiler cannot start while golem's
-  `/perf` or anything else is profiling, and the other way round.
+  `/perf` or anything else is profiling, and the other way round. The
+  background profiler holds it whenever no other profiler runs: set
+  `backgroundProfiler` to `false` to use `/perf` or `go tool pprof`'s
+  `/debug/pprof/profile`.
 - **Commands run on the tick goroutine**, not on a spark thread; anything slow
   (uploads, heap analysis) runs on its own goroutine and answers on the next
   tick.
