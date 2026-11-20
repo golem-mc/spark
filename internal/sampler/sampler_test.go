@@ -244,8 +244,7 @@ func TestAllocation(t *testing.T) {
 	done := make(chan struct{})
 	go func() { allocWork(); close(done) }()
 	<-done
-	runtime.GC() // allocations reach the profile at a collection
-	s.Stop(false)
+	s.Stop(false) // collects garbage, which publishes the allocations
 	allocated = nil
 	data := s.Export(ExportOptions{})
 	thread, size := findFrame(data, "allocWork")

@@ -3,7 +3,6 @@ package spark_test
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -137,11 +136,13 @@ func TestProfilerModes(t *testing.T) {
 		{"--lock", "Lock Profiler is now running! (go mutex profile)", sparkproto.SamplerMetadata_LOCK},
 	} {
 		say("/spark profiler start --thread * "+mode.flag, 1, mode.running)
-		runtime.GC()
 		say("/spark profiler stop", 10, "Profiler stopped & upload complete!")
 		var data sparkproto.SamplerData
 		if !bin.get("application/x-spark-sampler", &data) || data.Metadata.SamplerMode != mode.want {
 			t.Errorf("%s: mode %v", mode.flag, data.Metadata.GetSamplerMode())
+		}
+		if mode.want == sparkproto.SamplerMetadata_ALLOCATION && len(data.Threads) == 0 {
+			t.Error("--alloc: no allocations, though the server allocates on every tick")
 		}
 	}
 }

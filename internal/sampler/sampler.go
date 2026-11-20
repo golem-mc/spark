@@ -149,7 +149,14 @@ func Start(settings Settings, env Env) (*Sampler, error) {
 	if settings.Mode == Execution {
 		src, err = newCPUSource(hz)
 	} else {
-		src, err = newDeltaSource(settings.Mode, settings.LiveOnly)
+		// The baseline read allocates; on its own goroutine, it is not
+		// charged to the caller, often the server thread.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			src, err = newDeltaSource(settings.Mode, settings.LiveOnly)
+		}()
+		<-done
 	}
 	if err != nil {
 		return nil, err
