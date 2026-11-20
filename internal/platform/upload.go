@@ -13,13 +13,18 @@ const uploadTimeout = 30 * time.Second
 
 // upload posts msg to bytebin and answers its viewer URL.
 func (p *Platform) upload(msg proto.Message, mediaType, userAgentExtra string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), uploadTimeout)
-	defer cancel()
-	key, err := p.Bytebin.PostProto(ctx, msg, mediaType, userAgentExtra)
+	key, err := p.uploadKey(msg, mediaType, userAgentExtra)
 	if err != nil {
 		return "", err
 	}
 	return p.ViewerURL + key, nil
+}
+
+// uploadKey posts msg to bytebin and answers its key.
+func (p *Platform) uploadKey(msg proto.Message, mediaType, userAgentExtra string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), uploadTimeout)
+	defer cancel()
+	return p.Bytebin.PostProto(ctx, msg, mediaType, userAgentExtra)
 }
 
 // announceURL broadcasts a title and the clickable URL under it.

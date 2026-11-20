@@ -22,6 +22,7 @@ type activeSampler struct {
 	*sampler.Sampler
 	// initialGC are the GC statistics when it started.
 	initialGC map[string]monitor.GCStats
+	viewers   viewers
 }
 
 // exportProps are the choices of one profiler export. spark: Sampler.ExportProps
@@ -29,6 +30,8 @@ type exportProps struct {
 	creator             Sender
 	comment             string
 	separateParentCalls bool
+	// channelInfo is the live viewer's socket, for a profile it opens.
+	channelInfo *sparkproto.SocketChannelInfo
 }
 
 func samplerCommands(*Platform) []*Command {
@@ -77,9 +80,9 @@ func profiler(p *Platform, sender plugin.CommandSender, r *Responder, args *Argu
 	case is("info"):
 		p.profilerInfo(r)
 	case is("open"):
-		p.profilerOpen(r)
+		p.profilerOpen(r, args)
 	case is("trust-viewer"):
-		r.ReplyPrefixed(text.T("The live viewer is not supported.", text.Red))
+		p.profilerTrustViewer(r, args)
 	case is("cancel"):
 		p.profilerCancel(r)
 	case is("stop", "upload"):
@@ -124,6 +127,8 @@ func (p *Platform) startSampler(settings sampler.Settings, onComplete func(*acti
 				onComplete(a, err)
 			}
 		},
+		OnWindowRotate: func() { p.onWindowRotate(a) },
+		OnStop:         a.onSamplerStopped,
 	})
 	if err != nil {
 		return nil, err
@@ -277,11 +282,6 @@ func (p *Platform) profilerInfo(r *Responder) {
 	r.ReplyPrefixed(cmdPrompt("/" + commandName + " profiler cancel"))
 }
 
-// profilerOpen would open the live viewer. spark: SamplerModule.profilerOpen
-func (p *Platform) profilerOpen(r *Responder) {
-	r.ReplyPrefixed(text.T("The live viewer is not supported.", text.Red))
-}
-
 // profilerCancel stops the profiler without uploading. spark: SamplerModule.profilerCancel
 func (p *Platform) profilerCancel(r *Responder) {
 	s := p.activeSampler()
@@ -385,6 +385,7 @@ func (p *Platform) samplerData(s *activeSampler, props exportProps, snap tickSna
 	s.Metadata(md)
 	p.gatherMetadata(props.creator, s.initialGC, snap).writeSampler(md)
 	data.Metadata = md
+	data.ChannelInfo = props.channelInfo
 	return data
 }
 
