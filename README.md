@@ -17,6 +17,8 @@ Paper finds the same plugin.
   goroutines (`--thread *` all of them, `--regex` to match names),
   `--combine-all`/`--not-combined` change how they are grouped, and
   `--only-ticks-over <ms>` keeps only the ticks that took at least that long.
+  `--alloc` profiles memory allocation (`--alloc-live-only` the bytes still
+  in use) and `--lock` the time goroutines wait for locks.
   As in spark, a **background profiler** runs from startup and keeps the
   last hour: `/spark profiler stop` uploads it, `start` replaces it with the
   profiler asked for, and it starts again after a `stop`.
@@ -70,8 +72,8 @@ Paper finds the same plugin.
 
 ## Not yet
 
-- **`/spark profiler --alloc` and `--lock`** (allocation and lock profiling)
-  are being ported; they answer that the mode is not supported.
+Every command, sub-command and flag of spark's is ported. Some behave
+differently on Go's runtime; see [Differences from spark on Bukkit](#differences-from-spark-on-bukkit).
 
 ## Installing
 
@@ -163,6 +165,16 @@ alias: `spark.profiler`, `spark.tps`, `spark.ping`, `spark.health`,
   background profiler holds it whenever no other profiler runs: set
   `backgroundProfiler` to `false` to use `/perf` or `go tool pprof`'s
   `/debug/pprof/profile`.
+- **`--alloc`** reads the runtime's allocation profile, which samples about
+  one allocation per 512 KiB (`runtime.MemProfileRate`, so `--interval`
+  does not apply) and takes in allocations at each garbage collection.
+  `--alloc-live-only` shows how much the bytes in use grew, by where they
+  were allocated. **`--lock`** reads the mutex profile: the time goroutines
+  waited for a `sync.Mutex` or `RWMutex`, every contention recorded and
+  charged to the code that held the lock (channel waits are not locks
+  here). Neither profile records which tick a sample belongs to, so
+  `--only-ticks-over` cannot be combined with them, and goroutines are
+  recognised by their entry function alone.
 - **Commands run on the tick goroutine**, not on a spark thread; anything slow
   (uploads, heap analysis) runs on its own goroutine and answers on the next
   tick.

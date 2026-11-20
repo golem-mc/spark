@@ -170,14 +170,13 @@ func (p *Platform) profilerStart(r *Responder, args *Arguments) error {
 	case alloc && lock:
 		r.ReplyPrefixed(text.T("The --alloc and --lock flags cannot be used together. Please choose one profiling mode.", text.Red))
 		return nil
+	}
+	mode := sampler.Execution
+	switch {
 	case alloc:
-		r.ReplyPrefixed(text.T("Allocation profiling is not supported on your system. Check the console for more info.", text.Red))
-		p.Server.Logger().Warn("Allocation profiling is not ported to golem yet.")
-		return nil
+		mode = sampler.Allocation
 	case lock:
-		r.ReplyPrefixed(text.T("Lock profiling is not supported on your system. Check the console for more info.", text.Red))
-		p.Server.Logger().Warn("Lock profiling is not ported to golem yet.")
-		return nil
+		mode = sampler.Lock
 	}
 
 	interval, err := args.Float("interval")
@@ -210,6 +209,13 @@ func (p *Platform) profilerStart(r *Responder, args *Arguments) error {
 	if err != nil {
 		return err
 	}
+	if ticksOver != -1 && mode != sampler.Execution {
+		// The allocation and mutex profiles carry no goroutine labels, so
+		// their samples cannot be told apart by tick.
+		r.ReplyPrefixed(text.T("The --only-ticks-over flag cannot be used with --alloc or --lock.", text.Red))
+		return nil
+	}
+	settings.Mode, settings.LiveOnly = mode, args.Bool("alloc-live-only")
 	if ticksOver != -1 {
 		settings.OnlyTicksOver, settings.TicksOver = true, time.Duration(ticksOver)*time.Millisecond
 	}
@@ -238,7 +244,14 @@ func (p *Platform) profilerStart(r *Responder, args *Arguments) error {
 		return nil
 	}
 
-	r.BroadcastPrefixed(text.Of(text.T("Profiler is now running!", text.Gold), text.Space(), text.T("(go cpu profiler)", text.DarkGray)))
+	title, engine := "Profiler", "go cpu profiler"
+	switch mode {
+	case sampler.Allocation:
+		title, engine = "Allocation Profiler", "go allocation profile"
+	case sampler.Lock:
+		title, engine = "Lock Profiler", "go mutex profile"
+	}
+	r.BroadcastPrefixed(text.Of(text.T(title+" is now running!", text.Gold), text.Space(), text.T("("+engine+")", text.DarkGray)))
 	if timeout == -1 {
 		r.BroadcastPrefixed(text.T("It will run in the background until it is stopped by an admin."))
 		r.BroadcastPrefixed(text.T("To stop the profiler and upload the results, run:"))

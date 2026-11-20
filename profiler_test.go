@@ -3,6 +3,7 @@ package spark_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -108,5 +109,39 @@ func TestProfiler(t *testing.T) {
 	say("/spark activity", 2, "Profiler - ", "File: ", "Url: https://viewer.test/testkey")
 	if config, err := os.ReadFile(filepath.Join(dir, "config.json")); err != nil || !strings.Contains(string(config), `"backgroundProfiler": true`) {
 		t.Errorf("config.json: %s %v", config, err)
+	}
+}
+
+// TestProfilerModes runs the allocation and lock profilers.
+func TestProfilerModes(t *testing.T) {
+	bin := startBytebin(t)
+	srv := start(t, plugintest.Ops("Alice"))
+	alice := srv.Join("Alice")
+	say := func(line string, ticks int, want ...string) {
+		t.Helper()
+		alice.Run(line)
+		got := strings.Join(alice.Messages(ticks), "\n")
+		for _, w := range want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: missing %q in:\n%s", line, w, got)
+			}
+		}
+	}
+	say("/spark profiler start --alloc --lock", 1, "The --alloc and --lock flags cannot be used together.")
+	say("/spark profiler start --lock --only-ticks-over 10", 1, "The --only-ticks-over flag cannot be used with --alloc or --lock.")
+	for _, mode := range []struct {
+		flag, running string
+		want          sparkproto.SamplerMetadata_SamplerMode
+	}{
+		{"--alloc", "Allocation Profiler is now running! (go allocation profile)", sparkproto.SamplerMetadata_ALLOCATION},
+		{"--lock", "Lock Profiler is now running! (go mutex profile)", sparkproto.SamplerMetadata_LOCK},
+	} {
+		say("/spark profiler start --thread * "+mode.flag, 1, mode.running)
+		runtime.GC()
+		say("/spark profiler stop", 10, "Profiler stopped & upload complete!")
+		var data sparkproto.SamplerData
+		if !bin.get("application/x-spark-sampler", &data) || data.Metadata.SamplerMode != mode.want {
+			t.Errorf("%s: mode %v", mode.flag, data.Metadata.GetSamplerMode())
+		}
 	}
 }
