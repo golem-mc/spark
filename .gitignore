@@ -1,0 +1,17 @@
+# Local builds and runs
+/spark-server
+*.exe
+go.work
+go.work.sum
+
+# Reference checkout and local server runtime files
+spark/
+plugins/
+world/
+server.properties
+eula.txt
+ops.json
+whitelist.json
+banned-ips.json
+banned-players.json
+usercache.json
