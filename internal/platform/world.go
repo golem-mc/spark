@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/golem-mc/golem/plugin"
@@ -54,7 +55,10 @@ type chunkInfo struct {
 // spark: WorldStatisticsProvider.getWorldStatistics
 func (p *Platform) worldStatistics() *sparkproto.WorldStatistics {
 	stats := &sparkproto.WorldStatistics{EntityCounts: map[string]int32{}}
-	for _, w := range p.Server.Worlds() {
+	worlds := p.Server.Worlds()
+	stats.GameRules = p.gameRules(worlds)
+	stats.DataPacks = p.dataPacks()
+	for _, w := range worlds {
 		var chunks []chunkInfo
 		for _, chunk := range w.LoadedChunks() {
 			info := chunkInfo{x: int32(chunk.Pos().X), z: int32(chunk.Pos().Z), counts: map[string]int32{}}
@@ -85,6 +89,48 @@ func (p *Platform) worldStatistics() *sparkproto.WorldStatistics {
 		stats.Worlds = append(stats.Worlds, world)
 	}
 	return stats
+}
+
+// gameRules are the game rules, with their defaults and each world's value.
+// spark: PaperWorldInfoProvider.pollGameRules
+func (p *Platform) gameRules(worlds []plugin.World) []*sparkproto.WorldStatistics_GameRule {
+	var out []*sparkproto.WorldStatistics_GameRule
+	for _, info := range p.Server.Registries().GameRules() {
+		rule := &sparkproto.WorldStatistics_GameRule{Name: gameRuleName(info.Key), DefaultValue: gameRuleValue(info, info.Default), WorldValues: map[string]string{}}
+		for _, w := range worlds {
+			rule.WorldValues[worldName(w)] = gameRuleValue(info, w.GameRule(info.ID))
+		}
+		out = append(out, rule)
+	}
+	return out
+}
+
+// gameRuleName is a rule's name as /gamerule takes it: the path of a
+// vanilla rule's key.
+func gameRuleName(k plugin.Key) string {
+	if k.Namespace == "minecraft" {
+		return k.Path
+	}
+	return k.String()
+}
+
+func gameRuleValue(info plugin.GameRuleInfo, v int) string {
+	if info.Boolean {
+		return strconv.FormatBool(v != 0)
+	}
+	return strconv.Itoa(v)
+}
+
+// dataPacks are the data packs the server knows, enabled or not.
+// spark: PaperWorldInfoProvider.pollDataPacks
+func (p *Platform) dataPacks() []*sparkproto.WorldStatistics_DataPack {
+	var out []*sparkproto.WorldStatistics_DataPack
+	for _, pack := range p.Server.DataPacks() {
+		// Paper's Datapack.Source names, lower case without underscores.
+		source := map[plugin.DataPackSource]string{plugin.DataPackBuiltIn: "builtin", plugin.DataPackFeature: "feature", plugin.DataPackWorld: "world"}[pack.Source]
+		out = append(out, &sparkproto.WorldStatistics_DataPack{Name: pack.Title.PlainString(), Description: pack.Description.PlainString(), Source: source})
+	}
+	return out
 }
 
 // groupIntoRegions groups the chunks that have entities into regions of
