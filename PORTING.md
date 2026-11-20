@@ -116,17 +116,87 @@ Statistics are gathered on the tick goroutine and sent from another one.
 
 ## Deliberate differences
 
-- **Memory** is the Go runtime's (`runtime/metrics`): see the README.
+- **Memory** is the Go runtime's: the heap is the Go heap (live and unswept
+  objects used, the heap spans held from the OS committed), and its maximum is
+  `GOMEMLIMIT` when set, otherwise the machine's physical memory, since a Go
+  heap has no `-Xmx`. `--memory` shows the runtime's non-heap memory (stacks,
+  allocator metadata) and its heap areas in place of the JVM's memory pools.
+- **The runtime in uploads.** The viewer's "Java" and "JVM" fields hold the Go
+  version and toolchain, its VM arguments the `GOGC`/`GOMEMLIMIT`/
+  `GOMAXPROCS`/`GODEBUG` settings and the server's flags. The platform is
+  named `golem`, with golem's module version. GC figures are the Go
+  collector's (named `Go`): collections and their stop-the-world pauses.
+- **Garbage collection.** Go has one concurrent collector, reported as `Go`
+  where a JVM has young and old generations. A collection's duration is its
+  stop-the-world pauses, usually well under a millisecond. Its cause is
+  `forced` for a `runtime.GC` and left out otherwise, and the heap before it is
+  estimated from the previous collection's live heap plus what was allocated
+  since.
+- **Heap summary.** Go objects carry no class, so the summary lists
+  allocation sites (`github.com/golem-mc/golem/internal/world.(*Chunk).load`)
+  where spark lists classes. It comes from the runtime's heap profile, which
+  samples about one allocation per 512 KiB, so its counts are estimates.
+- **Heap dump** files are in the Go runtime's own format
+  (`runtime/debug.WriteHeapDump`), not hprof, so JVM tools such as Eclipse MAT
+  cannot open them. Writing one stops the server for its duration, as on Java.
+  As in spark, `gzip` is the only compression.
+- **The profiler** is the Go runtime's CPU profiler, not async-profiler or a
+  thread dumper, so it sees only goroutines that are running on a CPU:
+  waiting and sleeping goroutines never appear. `--ignore-sleeping` and
+  `--force-java-sampler` are accepted and change nothing, and the viewer shows
+  the engine as async (with the Go version). Goroutines have no names: a
+  goroutine is shown under the function it was started with
+  (`server.(*Server).acceptLoop`), golem's tick goroutine as `Server thread`,
+  and `--thread` takes those names. A frame's class is its Go package with the
+  method's receiver (`github.com/golem-mc/golem/internal/server.(*Server)`) and
+  its method the rest (`tickLoop`). Each frame is attributed to the plugin
+  whose Go module holds its package.
+- **Sampling interval.** The default is 10ms, the Go runtime's own rate. An
+  `--interval` other than 10ms makes the Go runtime print `cannot set cpu
+  profile rate until previous profile has finished` once per profile; the rate
+  is set all the same.
+- **One CPU profile per process.** The profiler cannot start while golem's
+  `/perf` or anything else is profiling, and the other way round. The
+  background profiler holds it whenever no other profiler runs: set
+  `backgroundProfiler` to `false` to use `/perf` or `go tool pprof`'s
+  `/debug/pprof/profile`.
+- **`--alloc`** reads the runtime's allocation profile, which samples about
+  one allocation per 512 KiB (`runtime.MemProfileRate`, so `--interval`
+  does not apply) and takes in allocations at each garbage collection; the
+  profiler collects garbage once as it stops, to count the latest ones.
+  `--alloc-live-only` shows how much the bytes in use grew, by where they
+  were allocated. **`--lock`** reads the mutex profile: the time goroutines
+  waited for a `sync.Mutex` or `RWMutex`, every contention recorded and
+  charged to the code that held the lock (channel waits are not locks
+  here). Neither profile records which tick a sample belongs to, so
+  `--only-ticks-over` cannot be combined with them, and goroutines are
+  recognised by their entry function alone.
+- **`--save-to-file`** also writes the same samples, every goroutine
+  included, as `profile-<date>.pprof` for `go tool pprof`: a golem extra.
 - **System properties.** Java's `-Dspark.<key>` overrides have no Go
   counterpart; the `SPARK_<KEY>` environment variables remain.
+  `backgroundProfilerEngine` is not read: Go has one profiling engine.
 - **Allocation rate averages** span 1, 5 and 15 minutes of 10-second
   samples; spark keeps 60, 300 and 900 samples, which is 10 times longer than
   their names say.
-- **Server configurations.** Only `server.properties` is uploaded: golem has
-  no `bukkit.yml`, `spigot.yml` or `paper/`.
-- **The sampler engine** is reported as async (it is the runtime's
-  signal-based profiler) with the Go version; `--force-java-sampler` and
-  `--ignore-sleeping` are accepted and have no effect: see the README.
+- **Server configurations.** Only `server.properties` is uploaded (without
+  secrets such as `rcon.password` and `level-seed`): golem has no
+  `bukkit.yml`, `spigot.yml` or `paper/`.
 - **Command execution.** spark runs every command on its own thread behind a
   lock; here `Run` is on the tick goroutine (so it may read players and worlds)
-  and moves only slow work off it.
+  and moves only slow work off it: uploads and heap analysis run on their own
+  goroutine and answer on the next tick.
+
+## Files and formats
+
+- `plugins/spark/config.json` takes spark's keys; `SPARK_<KEY>` overrides each.
+  Nothing is written until needed, except `backgroundProfiler`, which spark
+  writes as `true` the first time. `bytesocksHost` is a host reached over TLS;
+  a URL such as `http://localhost:8080` reaches a relay without.
+  `backgroundProfilerThreadDumper` is `default` (the server thread), `all`, or
+  goroutine names separated by commas.
+- Output files go to `plugins/spark/`: `profile-<date>.sparkprofile` (and
+  `.pprof`), `heapsummary-<date>.sparkheap`, `heap-<date>.heapdump` (and
+  `.gz`), and `activity.json`.
+- `/tps` also accepts `bukkit.command.tps`; every other permission is
+  `spark.<first alias>`, default operators.
