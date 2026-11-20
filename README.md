@@ -35,7 +35,7 @@ Paper finds the same plugin.
   minutes; `--player <name>` for one player.
 - **`/spark health`** (alias `healthreport`) — `upload` uploads a health report
   to bytebin and prints its link in spark's web viewer: platform, system,
-  memory, GC, TPS/MSPT, ping, players, per-world and per-chunk entity counts,
+  memory, GC, TPS/MSPT, ping, players, per-world and per-chunk entity counts, game rules and data packs,
   `server.properties` (without secrets such as `rcon.password` and
   `level-seed`), the plugins, and the last hour of TPS, tick duration, CPU,
   memory, allocation, world and ping graphs. `show` prints the report in chat;
@@ -68,10 +68,6 @@ Paper finds the same plugin.
   it is not supported.
 - **`/spark profiler --alloc` and `--lock`** (allocation and lock profiling)
   are being ported; they answer that the mode is not supported.
-- **Game rules and data packs** in the viewer's world statistics: golem's
-  plugin API cannot list game rules with their defaults
-  ([golem-mc/golem#58](https://github.com/golem-mc/golem/issues/58)) or the
-  data packs ([golem-mc/golem#59](https://github.com/golem-mc/golem/issues/59)).
 
 ## Installing
 

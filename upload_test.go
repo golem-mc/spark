@@ -100,6 +100,19 @@ func TestHealthUpload(t *testing.T) {
 	if len(stats.GetWorld().GetWorlds()) == 0 || md.GetSystemStatistics().GetCpu().GetThreads() <= 0 {
 		t.Errorf("world = %v, system = %v", stats.GetWorld(), md.GetSystemStatistics())
 	}
+	world := stats.GetWorld()
+	var keepInventory *sparkproto.WorldStatistics_GameRule
+	for _, rule := range world.GetGameRules() {
+		if rule.Name == "keep_inventory" {
+			keepInventory = rule
+		}
+	}
+	if keepInventory == nil || keepInventory.DefaultValue != "false" || len(keepInventory.WorldValues) != len(world.GetWorlds()) {
+		t.Errorf("keep_inventory = %v", keepInventory)
+	}
+	if packs := world.GetDataPacks(); len(packs) == 0 || packs[0].Source != "builtin" {
+		t.Errorf("data packs = %v", packs)
+	}
 	if _, ok := md.GetSources()["spark"]; !ok {
 		t.Errorf("sources = %v", md.GetSources())
 	}
