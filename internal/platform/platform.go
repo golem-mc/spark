@@ -77,7 +77,7 @@ func New(srv plugin.Server) *Platform {
 	}
 	p.Bytebin = bytebin.New(p.Config.String("bytebinUrl", "https://spark-usercontent.lucko.me/"), "spark-plugin")
 	p.disableBroadcast = p.Config.Bool("disableResponseBroadcast", false)
-	for _, module := range []func(*Platform) []*Command{samplerCommands, healthCommands, tickMonitorCommands, gcCommands, activityCommands} {
+	for _, module := range []func(*Platform) []*Command{samplerCommands, healthCommands, tickMonitorCommands, gcCommands, heapCommands, activityCommands} {
 		p.commands = append(p.commands, module(p)...)
 	}
 	return p
