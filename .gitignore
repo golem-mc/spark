@@ -5,7 +5,7 @@ go.work
 go.work.sum
 
 # Reference checkout and local server runtime files
-spark/
+/spark/
 plugins/
 world/
 server.properties

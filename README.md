@@ -14,18 +14,29 @@ Paper finds the same plugin.
   report unless `overrideTpsCommand` is `false`.
 - **`/spark ping`** — the online players' pings now and over the last 15
   minutes; `--player <name>` for one player.
-- **`/spark health show`** (alias `healthreport`) — the report in chat: TPS,
-  tick durations, CPU, memory, network and disk; `--memory` adds the runtime's
-  non-heap memory and heap areas, `--network` every interface.
+- **`/spark health`** (alias `healthreport`) — `upload` uploads a health report
+  to bytebin and prints its link in spark's web viewer: platform, system,
+  memory, GC, TPS/MSPT, ping, players, per-world and per-chunk entity counts,
+  `server.properties` (without secrets such as `rcon.password` and
+  `level-seed`), the plugins, and the last hour of TPS, tick duration, CPU,
+  memory, allocation, world and ping graphs. `show` prints the report in chat;
+  `--memory` adds the runtime's non-heap memory and heap areas, `--network`
+  every interface.
+- **`/spark activity`** (`activitylog`, `log`) — the uploads and files spark
+  made, `--page <n>`, kept in `plugins/spark/activity.json`.
 - **`/spark`**, **`/spark help`** and tab completion of every sub-command and
   flag.
 
 ## Not yet
 
-- `/spark health` / `health upload` (the web viewer report), `/spark profiler`,
-  `/spark tickmonitor`, `/spark gc`, `/spark gcmonitor`, `/spark heapsummary`,
-  `/spark heapdump`, `/spark activity`, the background profiler and the live
-  viewer are being ported.
+- `/spark profiler`, `/spark tickmonitor`, `/spark gc`, `/spark gcmonitor`,
+  `/spark heapsummary`, `/spark heapdump`, the background profiler and the live
+  viewer are being ported. Until the live viewer is, `/spark health` and
+  `/spark health dashboard` upload a report as `upload` does.
+- **Game rules and data packs** in the viewer's world statistics: golem's
+  plugin API cannot list game rules with their defaults
+  ([golem-mc/golem#58](https://github.com/golem-mc/golem/issues/58)) or the
+  data packs ([golem-mc/golem#59](https://github.com/golem-mc/golem/issues/59)).
 
 ## Installing
 
@@ -53,13 +64,15 @@ each, as on Java (system properties have no Go counterpart):
 
 | Key | Default | |
 |---|---|---|
+| `viewerUrl` | `https://spark.lucko.me/` | the web viewer links point to |
+| `bytebinUrl` | `https://spark-usercontent.lucko.me/` | where reports are uploaded |
 | `overrideTpsCommand` | `true` | replace `/tps` with `/spark tps` |
 | `disableResponseBroadcast` | `false` | send command output only to its sender, not to everyone with the permission |
 
 ## Permissions
 
 `spark` grants every command; `spark.<command>` grants one, named by its first
-alias: `spark.tps`, `spark.ping`, `spark.health`. All default to operators
+alias: `spark.tps`, `spark.ping`, `spark.health`, `spark.activity`. All default to operators
 (level 2). `/tps` also accepts `bukkit.command.tps`.
 
 ## Differences from spark on Bukkit
@@ -69,6 +82,11 @@ alias: `spark.tps`, `spark.ping`, `spark.health`. All default to operators
   `GOMEMLIMIT` when set, otherwise the machine's physical memory, since a Go
   heap has no `-Xmx`. `--memory` shows the runtime's non-heap memory (stacks,
   allocator metadata) and its heap areas in place of the JVM's memory pools.
+- **The runtime in uploads.** The viewer's "Java" and "JVM" fields hold the Go
+  version and toolchain, its VM arguments the `GOGC`/`GOMEMLIMIT`/
+  `GOMAXPROCS`/`GODEBUG` settings and the server's flags. The platform is
+  named `golem`, with golem's module version. GC figures are the Go
+  collector's (named `Go`): collections and their stop-the-world pauses.
 - **Commands run on the tick goroutine**, not on a spark thread; anything slow
   (uploads, heap analysis) runs on its own goroutine and answers on the next
   tick.
