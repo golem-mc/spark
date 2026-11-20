@@ -9,7 +9,7 @@ run = "go build ./..."
 
 [tasks."build:server"]
 description = "Build a golem server with spark built in, through the launcher"
-run = "go tool launcher -config dev/launcher.json build"
+run = "tools/launcher.sh build"
 
 [tasks.test]
 description = "Run all tests, rerunning the ones that fail"
@@ -62,7 +62,7 @@ depends = ["build", "test", "lint", "fmt:check", "fix:check", "tidy:check"]
 
 [tasks.dev]
 description = "Run a golem server with spark built in"
-run = "go tool launcher -config dev/launcher.json"
+run = "tools/launcher.sh"
 
 [tasks."gen:proto"]
 description = "Generate internal/sparkproto from spark's .proto files in proto/"

@@ -24,7 +24,7 @@ directory to read alongside (`git clone https://github.com/lucko/spark spark`).
 | `internal/config/` | `config.json` with `SPARK_*` overrides | `util/config/*` |
 | `internal/text/` | Chat components, spark's prefix, and number and bar formatting | adventure calls, `FormatUtil`, `StatisticFormatter` |
 | `internal/rolling/` | Rolling averages | `RollingAverage` |
-| `dev/launcher.json` | The launcher config `mise run dev` builds a server with this checkout from | — |
+| `tools/launcher.sh` | Runs the launcher with this checkout built in, on the golem version `go.mod` pins | — |
 
 ## How the Java maps to Go
 
