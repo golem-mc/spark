@@ -121,6 +121,12 @@ func newDeltaSource(mode Mode, liveOnly bool) (*deltaSource, error) {
 func (d *deltaSource) collect(final bool) (*profile.Profile, string, error) {
 	if final {
 		defer d.stop()
+		if d.name == "allocs" {
+			// Allocations reach the profile only when a collection ends; one
+			// now counts those since the last, which a quiet server may not
+			// have had during the whole profile.
+			runtime.GC()
+		}
 	}
 	var buf bytes.Buffer
 	if err := pprof.Lookup(d.name).WriteTo(&buf, 0); err != nil {

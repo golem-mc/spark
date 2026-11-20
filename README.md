@@ -167,7 +167,8 @@ alias: `spark.profiler`, `spark.tps`, `spark.ping`, `spark.health`,
   `/debug/pprof/profile`.
 - **`--alloc`** reads the runtime's allocation profile, which samples about
   one allocation per 512 KiB (`runtime.MemProfileRate`, so `--interval`
-  does not apply) and takes in allocations at each garbage collection.
+  does not apply) and takes in allocations at each garbage collection; the
+  profiler collects garbage once as it stops, to count the latest ones.
   `--alloc-live-only` shows how much the bytes in use grew, by where they
   were allocated. **`--lock`** reads the mutex profile: the time goroutines
   waited for a `sync.Mutex` or `RWMutex`, every contention recorded and
