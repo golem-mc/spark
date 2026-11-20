@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/golem-mc/golem v0.0.0-20261120013137-4f95109e0ff6
+	github.com/google/pprof v0.0.0-20261118010117-084b33a85f63
 	github.com/magiconair/properties v1.18.13
 	github.com/shirou/gopsutil/v4 v4.26.10
 	google.golang.org/protobuf v1.36.12

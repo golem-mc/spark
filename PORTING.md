@@ -14,6 +14,7 @@ directory to read alongside (`git clone https://github.com/lucko/spark spark`).
 |---|---|---|
 | `spark.go` | The `spark` plugin: builds and enables the platform | `BukkitSparkPlugin` |
 | `internal/platform/` | The platform, `/spark` and its argument parsing, completion and replies, and one `module_*.go` per command module | `SparkPlatform`, `CommandManager`, `Arguments`, `CommandResponseHandler`, `TabCompleter`, `command/modules/*` |
+| `internal/sampler/` | The profiler: CPU profiles, the call trees, threads and their grouping, the viewer's export | `sampler/*` |
 | `internal/monitor/` | Tick rate and durations, CPU, memory, network, disk and ping monitors | `monitor/*` |
 | `internal/metric/` | The last hour of time series for the viewer's graphs | `metric/*` |
 | `internal/sparkproto/` | spark's protobuf messages, generated from `proto/spark/*.proto` (spark's files, unchanged) by `mise run gen:proto` | `src/main/proto` |
@@ -53,6 +54,39 @@ directory to read alongside (`git clone https://github.com/lucko/spark spark`).
   goroutine. `gatherMetadata` is spark's `SparkMetadata.gather`; the
   statistics it fills are in `statistics.go` and `world.go`.
 
+## The sampler
+
+spark samples Java threads' stacks itself (or through async-profiler); Go
+cannot read another goroutine's stack at an interval, so `internal/sampler`
+uses the runtime's CPU profiler (`runtime/pprof`), which interrupts running
+threads with `SIGPROF` and records the goroutine's stack and labels.
+
+- **Windows.** The profile is stopped and restarted at each one-minute window
+  boundary (and when a profile is exported), parsed with
+  `github.com/google/pprof/profile`, and its samples added to the trees under
+  that window, so the viewer's per-window statistics and its time slider work
+  as on Java. Windows are shifted by a random offset and pruned to the last 60,
+  as spark does. With a non-default `--interval` the profile is not rotated
+  each minute, so the runtime's notice about the rate is printed once.
+- **The Server thread.** On each `ServerTickStartEvent` the tick goroutine
+  labels itself (`pprof.SetGoroutineLabels`) as `spark-thread=Server thread`,
+  and learns its entry function (`runtime.Callers`) the first time. Labels are
+  inherited by goroutines started from the tick goroutine, so a sample is the
+  server thread's when its outermost frame is that entry function; the label
+  decides only for a stack the runtime cut off at 64 frames.
+- **Other goroutines** are named by their entry function without its
+  package's directory, and grouped by spark's thread groupers.
+- **`--only-ticks-over`** adds the tick number to the label. Samples wait
+  until `ServerTickEndEvent` says how long their tick took, and are kept, in
+  the window the tick ended in, only when it took at least the threshold.
+  Samples outside a tick are dropped.
+- **Plugins.** A frame's class is its package (plus receiver), so the class
+  sources map each package to the plugin with the longest `plugin.Info.Module`
+  that holds it.
+- **Locks.** The tick goroutine takes only `tickMu`, a short lock on tick
+  counts; parsing a profile happens on the sampler's goroutine under `mu`, so
+  it never holds a tick up.
+
 ## Deliberate differences
 
 - **Memory** is the Go runtime's (`runtime/metrics`): see the README.
@@ -63,6 +97,9 @@ directory to read alongside (`git clone https://github.com/lucko/spark spark`).
   their names say.
 - **Server configurations.** Only `server.properties` is uploaded: golem has
   no `bukkit.yml`, `spigot.yml` or `paper/`.
+- **The sampler engine** is reported as async (it is the runtime's
+  signal-based profiler) with the Go version; `--force-java-sampler` and
+  `--ignore-sleeping` are accepted and have no effect: see the README.
 - **Command execution.** spark runs every command on its own thread behind a
   lock; here `Run` is on the tick goroutine (so it may read players and worlds)
   and moves only slow work off it.

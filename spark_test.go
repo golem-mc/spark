@@ -11,7 +11,7 @@ import (
 // TestCommands runs the /spark commands that need no upload, as an operator
 // and as a player without permission, sharing one server.
 func TestCommands(t *testing.T) {
-	srv := plugintest.Start(t, plugintest.Ops("Alice"))
+	srv := start(t, plugintest.Ops("Alice"))
 	alice := srv.Join("Alice")
 	bob := srv.Join("Bob")
 
