@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"github.com/golem-mc/golem/plugin"
+	"github.com/golem-mc/spark/internal/activitylog"
+	"github.com/golem-mc/spark/internal/bytebin"
 	"github.com/golem-mc/spark/internal/config"
+	"github.com/golem-mc/spark/internal/metric"
 	"github.com/golem-mc/spark/internal/monitor"
 )
 
@@ -20,9 +23,20 @@ type Platform struct {
 	Version string
 	Config  *config.Config
 
+	// ViewerURL is spark's web viewer, ending in a slash; an upload's key
+	// is appended to it.
+	ViewerURL string
+	Bytebin   *bytebin.Client
+	Activity  *activitylog.Log
+
+	Metrics  *metric.Metrics
 	Ticks    *monitor.TickStatistics
 	Ping     *monitor.PingStatistics
 	Monitors *monitor.Monitors
+
+	// startupGC are the GC statistics once the server finished starting, the
+	// base of the GC figures reports show.
+	startupGC map[string]monitor.GCStats
 
 	commands         []*Command
 	disableBroadcast bool
@@ -36,15 +50,23 @@ type Platform struct {
 
 // New makes spark for srv, reading plugins/spark/config.json.
 func New(srv plugin.Server) *Platform {
+	metrics := metric.New()
 	p := &Platform{
-		Server:  srv,
-		Version: version(srv),
-		Config:  config.Load(filepath.Join(srv.DataDir(), "config.json")),
-		Ticks:   monitor.NewTickStatistics(),
-		Ping:    monitor.NewPingStatistics(),
+		Server:   srv,
+		Version:  version(srv),
+		Config:   config.Load(filepath.Join(srv.DataDir(), "config.json")),
+		Activity: activitylog.Load(filepath.Join(srv.DataDir(), "activity.json")),
+		Metrics:  metrics,
+		Ticks:    monitor.NewTickStatistics(metrics),
+		Ping:     monitor.NewPingStatistics(metrics),
 	}
+	p.ViewerURL = p.Config.String("viewerUrl", "https://spark.lucko.me/")
+	if !strings.HasSuffix(p.ViewerURL, "/") {
+		p.ViewerURL += "/"
+	}
+	p.Bytebin = bytebin.New(p.Config.String("bytebinUrl", "https://spark-usercontent.lucko.me/"), "spark-plugin")
 	p.disableBroadcast = p.Config.Bool("disableResponseBroadcast", false)
-	for _, module := range []func(*Platform) []*Command{healthCommands} {
+	for _, module := range []func(*Platform) []*Command{healthCommands, activityCommands} {
 		p.commands = append(p.commands, module(p)...)
 	}
 	return p
@@ -69,7 +91,8 @@ func version(srv plugin.Server) string {
 // spark: SparkPlatform.enable
 func (p *Platform) Enable() error {
 	p.started = time.Now()
-	p.Monitors = monitor.Start()
+	p.startupGC = monitor.PollGC()
+	p.Monitors = monitor.Start(p.Metrics)
 	plugin.Listen(p.Server, func(e *plugin.ServerTickStartEvent) {
 		p.Ticks.OnTickStart(e.Tick, time.Now(), p.Server.Ticks().Rate())
 	}, plugin.ListenOptions{Priority: plugin.Lowest})
@@ -78,6 +101,10 @@ func (p *Platform) Enable() error {
 	}, plugin.ListenOptions{Priority: plugin.Monitor})
 	p.tasks = append(p.tasks, p.Server.Scheduler().RunAsyncTimer(monitor.PingQuerySeconds*time.Second, monitor.PingQuerySeconds*time.Second, func() {
 		p.Server.Scheduler().RunTask(func() { p.Ping.Record(p.pings()) })
+	}))
+	// spark: WorldMetricsCollector
+	p.tasks = append(p.tasks, p.Server.Scheduler().RunAsyncTimer(metric.Interval, metric.Interval, func() {
+		p.Server.Scheduler().RunTask(func() { p.Metrics.WorldInfo.Record(time.Now().UnixMilli(), p.counts()) })
 	}))
 
 	for _, node := range p.Permissions() {

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golem-mc/spark/internal/metric"
 	"github.com/golem-mc/spark/internal/rolling"
 )
 
@@ -29,11 +30,15 @@ type TickStatistics struct {
 	duration10s, duration1m, duration5m *rolling.Average
 
 	target int
+
+	metrics *metric.Metrics
 }
 
-// NewTickStatistics answers statistics for a server targeting 20 ticks a second.
-func NewTickStatistics() *TickStatistics {
+// NewTickStatistics answers statistics for a server targeting 20 ticks a
+// second, recording into metrics.
+func NewTickStatistics(metrics *metric.Metrics) *TickStatistics {
 	t := &TickStatistics{
+		metrics:     metrics,
 		duration10s: rolling.New(ticksPerSecond * 10),
 		duration1m:  rolling.New(ticksPerSecond * 60),
 		duration5m:  rolling.New(ticksPerSecond * 60 * 5),
@@ -67,6 +72,9 @@ func (t *TickStatistics) OnTickStart(tick int64, now time.Time, targetRate float
 		avg.add(current, diff)
 	}
 	t.last = now
+	if metric.Due(t.metrics, &t.metrics.TPS, now) {
+		t.metrics.TPS.Record(now.UnixMilli(), t.tps[1].average())
+	}
 }
 
 // OnTickEnd records a tick's duration in milliseconds.
@@ -78,6 +86,9 @@ func (t *TickStatistics) OnTickEnd(mspt float64) {
 	t.duration10s.Add(mspt)
 	t.duration1m.Add(mspt)
 	t.duration5m.Add(mspt)
+	if now := time.Now(); metric.Due(t.metrics, &t.metrics.TickDuration, now) {
+		t.metrics.TickDuration.Record(now.UnixMilli(), t.duration10s.Snapshot())
+	}
 }
 
 // TargetTPS is the tick rate the server aims for.

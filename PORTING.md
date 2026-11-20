@@ -15,6 +15,10 @@ directory to read alongside (`git clone https://github.com/lucko/spark spark`).
 | `spark.go` | The `spark` plugin: builds and enables the platform | `BukkitSparkPlugin` |
 | `internal/platform/` | The platform, `/spark` and its argument parsing, completion and replies, and one `module_*.go` per command module | `SparkPlatform`, `CommandManager`, `Arguments`, `CommandResponseHandler`, `TabCompleter`, `command/modules/*` |
 | `internal/monitor/` | Tick rate and durations, CPU, memory, network, disk and ping monitors | `monitor/*` |
+| `internal/metric/` | The last hour of time series for the viewer's graphs | `metric/*` |
+| `internal/sparkproto/` | spark's protobuf messages, generated from `proto/spark/*.proto` (spark's files, unchanged) by `mise run gen:proto` | `src/main/proto` |
+| `internal/bytebin/` | Uploads to bytebin | `BytebinClient` |
+| `internal/activitylog/` | `activity.json` | `activitylog/*` |
 | `internal/config/` | `config.json` with `SPARK_*` overrides | `util/config/*` |
 | `internal/text/` | Chat components, spark's prefix, and number and bar formatting | adventure calls, `FormatUtil`, `StatisticFormatter` |
 | `internal/rolling/` | Rolling averages | `RollingAverage` |
@@ -43,11 +47,22 @@ directory to read alongside (`git clone https://github.com/lucko/spark spark`).
   CPU is polled every second and the network every minute
   (`monitor.Monitors`), pings every 10 seconds.
 
+- **Uploads.** A report gathers what only the tick goroutine may read
+  (players, worlds) with `p.snapshot(world)` in `Run`, then builds the
+  message, uploads it (`p.upload`) and announces the link on another
+  goroutine. `gatherMetadata` is spark's `SparkMetadata.gather`; the
+  statistics it fills are in `statistics.go` and `world.go`.
+
 ## Deliberate differences
 
 - **Memory** is the Go runtime's (`runtime/metrics`): see the README.
 - **System properties.** Java's `-Dspark.<key>` overrides have no Go
   counterpart; the `SPARK_<KEY>` environment variables remain.
+- **Allocation rate averages** span 1, 5 and 15 minutes of 10-second
+  samples; spark keeps 60, 300 and 900 samples, which is 10 times longer than
+  their names say.
+- **Server configurations.** Only `server.properties` is uploaded: golem has
+  no `bukkit.yml`, `spigot.yml` or `paper/`.
 - **Command execution.** spark runs every command on its own thread behind a
   lock; here `Run` is on the tick goroutine (so it may read players and worlds)
   and moves only slow work off it.

@@ -5,7 +5,10 @@ import (
 	"slices"
 
 	"github.com/golem-mc/golem/plugin"
+	"github.com/golem-mc/spark/internal/activitylog"
+	"github.com/golem-mc/spark/internal/bytebin"
 	"github.com/golem-mc/spark/internal/monitor"
+	"github.com/golem-mc/spark/internal/sparkproto"
 	"github.com/golem-mc/spark/internal/text"
 )
 
@@ -111,8 +114,29 @@ func healthReport(p *Platform, sender plugin.CommandSender, r *Responder, args *
 		r.Reply(p.healthReportLines(args.Bool("memory"), args.Bool("network"))...)
 		return nil
 	}
-	r.ReplyPrefixed(text.T("Uploading health reports is not available yet; run /spark health show.", text.Red))
+	p.healthReportUpload(r)
 	return nil
+}
+
+// healthReportUpload uploads the report for the viewer. The live dashboard
+// (the default sub-command) needs the viewer socket, so until that is
+// ported it uploads a report as upload does.
+// spark: HealthModule.healthReportUpload
+func (p *Platform) healthReportUpload(r *Responder) {
+	r.ReplyPrefixed(text.T("Generating server health report..."))
+	snap := p.snapshot(true)
+	async := r.Async()
+	p.Server.Scheduler().RunAsync(func() {
+		data := &sparkproto.HealthData{Metadata: p.gatherMetadata(r.Sender(), p.startupGC, snap).health()}
+		url, err := p.upload(data, bytebin.HealthMediaType, "")
+		if err != nil {
+			async.BroadcastPrefixed(text.T("An error occurred whilst uploading the data.", text.Red))
+			p.Server.Logger().Error("An error occurred whilst uploading data", "error", err)
+			return
+		}
+		announceURL(async, "Health Report:", url)
+		p.logActivity(async, "Health report", activitylog.DataURL, url)
+	})
 }
 
 // heading is a report section's title. spark: text(">", DARK_GRAY, BOLD) ...

@@ -5,10 +5,12 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/golem-mc/spark/internal/metric"
 )
 
 func TestTickStatistics(t *testing.T) {
-	s := NewTickStatistics()
+	s := NewTickStatistics(metric.New())
 	if s.TPS5Sec() != 20 || s.DurationSupported() {
 		t.Fatalf("fresh statistics: tps=%v durations=%v", s.TPS5Sec(), s.DurationSupported())
 	}
@@ -46,7 +48,7 @@ func TestPingSummary(t *testing.T) {
 	if empty := Summarise(nil); empty.Total() != 0 || empty.Max() != 0 {
 		t.Error("empty summary")
 	}
-	stats := NewPingStatistics()
+	stats := NewPingStatistics(metric.New())
 	stats.Record(nil)
 	if stats.Average().Samples() != 0 {
 		t.Error("no players, no sample")

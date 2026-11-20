@@ -3,15 +3,16 @@ package monitor
 import (
 	"math"
 	"runtime/metrics"
+	"time"
 
+	"github.com/golem-mc/spark/internal/metric"
+	"github.com/golem-mc/spark/internal/rolling"
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
 // MemoryUsage is a memory area's usage in bytes; Max is -1 when the area has
 // no limit. spark: java.lang.management.MemoryUsage
-type MemoryUsage struct {
-	Init, Used, Committed, Max int64
-}
+type MemoryUsage = metric.MemoryUsage
 
 // MemoryPool is one memory area with its usage after the last collection.
 type MemoryPool struct {
@@ -105,3 +106,34 @@ func HeapPools() []MemoryPool {
 // AllocatedBytes is the total the heap has allocated since the process
 // started.
 func AllocatedBytes() int64 { return readMemory()[mAllocedBytes] }
+
+// Allocation is the heap's allocation rate in bytes per second.
+// spark: MemoryAllocationInfo
+type Allocation struct {
+	// Last1m, Last5m and Last15m average the rate polled every 10 seconds.
+	Last1m, Last5m, Last15m *rolling.Average
+
+	previous int64
+	at       time.Time
+}
+
+func newAllocation() *Allocation {
+	per := int(time.Minute / metric.Interval)
+	return &Allocation{Last1m: rolling.New(per), Last5m: rolling.New(5 * per), Last15m: rolling.New(15 * per), previous: -1}
+}
+
+// poll answers the rate since the last poll; false on the first.
+func (a *Allocation) poll() (float64, bool) {
+	now := time.Now()
+	total := AllocatedBytes()
+	previous, at := a.previous, a.at
+	a.previous, a.at = total, now
+	if previous < 0 || total < previous {
+		return 0, false
+	}
+	bps := float64(total-previous) / now.Sub(at).Seconds()
+	a.Last1m.Add(bps)
+	a.Last5m.Add(bps)
+	a.Last15m.Add(bps)
+	return bps, true
+}

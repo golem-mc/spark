@@ -59,3 +59,19 @@ depends = ["build", "test", "lint", "fmt:check", "fix:check", "tidy:check"]
 [tasks.dev]
 description = "Run a golem server with spark built in"
 run = "go run ./cmd/server"
+
+[tasks."gen:proto"]
+description = "Generate internal/sparkproto from spark's .proto files in proto/"
+tools = { protoc = "36.2" }
+run = '''
+bin=$(mktemp -d)
+trap 'rm -rf "$bin"' EXIT
+go build -o "$bin/protoc-gen-go" google.golang.org/protobuf/cmd/protoc-gen-go
+opts=""
+for f in proto/spark/*.proto; do
+  opts="$opts --go_opt=M${f#proto/}=github.com/golem-mc/spark/internal/sparkproto;sparkproto"
+done
+protoc --plugin=protoc-gen-go="$bin/protoc-gen-go" -I proto --go_out=internal/sparkproto --go_opt=paths=source_relative $opts proto/spark/*.proto
+mv internal/sparkproto/spark/*.pb.go internal/sparkproto/
+rmdir internal/sparkproto/spark
+'''

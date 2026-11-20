@@ -4,7 +4,9 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/golem-mc/spark/internal/metric"
 	"github.com/golem-mc/spark/internal/rolling"
 )
 
@@ -63,11 +65,12 @@ type PlayerPing struct {
 // PingStatistics averages the players' median ping. spark: PingStatistics
 type PingStatistics struct {
 	average *rolling.Average
+	metrics *metric.Metrics
 }
 
-// NewPingStatistics answers empty statistics.
-func NewPingStatistics() *PingStatistics {
-	return &PingStatistics{average: rolling.New(pingWindow)}
+// NewPingStatistics answers empty statistics recording into metrics.
+func NewPingStatistics(metrics *metric.Metrics) *PingStatistics {
+	return &PingStatistics{average: rolling.New(pingWindow), metrics: metrics}
 }
 
 // Record adds one reading of every online player's ping; no players, no
@@ -76,6 +79,7 @@ func (p *PingStatistics) Record(pings []PlayerPing) PingSummary {
 	s := Summarise(pings)
 	if s.Total() != 0 {
 		p.average.Add(s.Median())
+		p.metrics.PlayerPing.Record(time.Now().UnixMilli(), s.Values())
 	}
 	return s
 }
