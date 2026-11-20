@@ -128,6 +128,9 @@ func (p *Platform) healthReportUpload(r *Responder) {
 	async := r.Async()
 	p.Server.Scheduler().RunAsync(func() {
 		data := &sparkproto.HealthData{Metadata: p.gatherMetadata(r.Sender(), p.startupGC, snap).health()}
+		if s := p.activeSampler(); s != nil {
+			data.TimeWindowStatistics = s.WindowStatistics()
+		}
 		url, err := p.upload(data, bytebin.HealthMediaType, "")
 		if err != nil {
 			async.BroadcastPrefixed(text.T("An error occurred whilst uploading the data.", text.Red))

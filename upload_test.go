@@ -20,6 +20,14 @@ type fakeBytebin struct {
 	uploads map[string][]byte // content type -> body
 }
 
+// start runs a test server in a temporary directory, where the server and
+// spark write their files.
+func start(t *testing.T, opts ...plugintest.Option) *plugintest.Server {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	return plugintest.Start(t, opts...)
+}
+
 func startBytebin(t *testing.T) *fakeBytebin {
 	t.Helper()
 	b := &fakeBytebin{uploads: map[string][]byte{}}
@@ -53,7 +61,7 @@ func (b *fakeBytebin) get(contentType string, msg proto.Message) bool {
 // metadata, in the activity log.
 func TestHealthUpload(t *testing.T) {
 	bin := startBytebin(t)
-	srv := plugintest.Start(t, plugintest.Ops("Alice"))
+	srv := start(t, plugintest.Ops("Alice"))
 	alice := srv.Join("Alice")
 
 	alice.Run("/spark health upload")

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golem-mc/golem/plugin"
 	"github.com/golem-mc/spark/internal/metric"
 	"github.com/golem-mc/spark/internal/monitor"
 	"github.com/golem-mc/spark/internal/sparkproto"
@@ -315,4 +316,21 @@ func (m metadata) heap() *sparkproto.HeapMetadata {
 func (m metadata) writeSampler(s *sparkproto.SamplerMetadata) {
 	s.Creator, s.PlatformMetadata, s.PlatformStatistics, s.SystemStatistics = m.creator, m.platform, m.stats, m.system
 	s.EndTime, s.ServerConfigurations, s.Sources, s.Metrics = m.generated, m.configs, m.sources, m.metrics
+}
+
+// pluginOfModule answers the plugin whose module holds pkg, a package path:
+// the one with the longest matching module path.
+// spark: ClassSourceLookup (a class's plugin by its jar)
+func pluginOfModule(plugins []plugin.Info, pkg string) (string, bool) {
+	best, name := -1, ""
+	for _, info := range plugins {
+		m := info.Module
+		if m == "" || len(m) <= best {
+			continue
+		}
+		if pkg == m || strings.HasPrefix(pkg, m+"/") {
+			best, name = len(m), info.Name
+		}
+	}
+	return name, best >= 0
 }

@@ -6,6 +6,8 @@ package platform
 import (
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golem-mc/golem/plugin"
@@ -38,6 +40,11 @@ type Platform struct {
 	// base of the GC figures reports show.
 	startupGC map[string]monitor.GCStats
 
+	samplerMu sync.Mutex
+	sampler   *activeSampler
+	// latestCounts are the world counts last taken on the tick goroutine.
+	latestCounts atomic.Pointer[metric.WorldCounts]
+
 	commands         []*Command
 	disableBroadcast bool
 	closers          []func()
@@ -66,7 +73,7 @@ func New(srv plugin.Server) *Platform {
 	}
 	p.Bytebin = bytebin.New(p.Config.String("bytebinUrl", "https://spark-usercontent.lucko.me/"), "spark-plugin")
 	p.disableBroadcast = p.Config.Bool("disableResponseBroadcast", false)
-	for _, module := range []func(*Platform) []*Command{healthCommands, activityCommands} {
+	for _, module := range []func(*Platform) []*Command{samplerCommands, healthCommands, activityCommands} {
 		p.commands = append(p.commands, module(p)...)
 	}
 	return p
@@ -95,16 +102,26 @@ func (p *Platform) Enable() error {
 	p.Monitors = monitor.Start(p.Metrics)
 	plugin.Listen(p.Server, func(e *plugin.ServerTickStartEvent) {
 		p.Ticks.OnTickStart(e.Tick, time.Now(), p.Server.Ticks().Rate())
+		if s := p.activeSampler(); s != nil {
+			s.OnTickStart(e.Tick)
+		}
 	}, plugin.ListenOptions{Priority: plugin.Lowest})
 	plugin.Listen(p.Server, func(e *plugin.ServerTickEndEvent) {
 		p.Ticks.OnTickEnd(e.MSPT)
+		if s := p.activeSampler(); s != nil {
+			s.OnTickEnd(e.Tick, time.Duration(e.MSPT*float64(time.Millisecond)))
+		}
 	}, plugin.ListenOptions{Priority: plugin.Monitor})
 	p.tasks = append(p.tasks, p.Server.Scheduler().RunAsyncTimer(monitor.PingQuerySeconds*time.Second, monitor.PingQuerySeconds*time.Second, func() {
 		p.Server.Scheduler().RunTask(func() { p.Ping.Record(p.pings()) })
 	}))
 	// spark: WorldMetricsCollector
 	p.tasks = append(p.tasks, p.Server.Scheduler().RunAsyncTimer(metric.Interval, metric.Interval, func() {
-		p.Server.Scheduler().RunTask(func() { p.Metrics.WorldInfo.Record(time.Now().UnixMilli(), p.counts()) })
+		p.Server.Scheduler().RunTask(func() {
+			c := p.counts()
+			p.latestCounts.Store(&c)
+			p.Metrics.WorldInfo.Record(time.Now().UnixMilli(), c)
+		})
 	}))
 
 	for _, node := range p.Permissions() {
@@ -125,6 +142,10 @@ func (p *Platform) Enable() error {
 func (p *Platform) Disable() {
 	for _, c := range p.closers {
 		c()
+	}
+	if s := p.activeSampler(); s != nil {
+		p.unsetSampler(s)
+		s.Stop(true)
 	}
 	for _, t := range p.tasks {
 		t.Cancel()

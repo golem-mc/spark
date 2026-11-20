@@ -8,6 +8,22 @@ Paper finds the same plugin.
 
 ## What's included
 
+- **`/spark profiler`** (alias `sampler`) — `start` samples the server and
+  `stop` uploads the profile to bytebin and prints its link in spark's web
+  viewer (`upload` is an alias); `info` shows the running profiler and
+  `cancel` drops it. `start` takes spark's flags: `--timeout <seconds>` stops
+  and uploads by itself, `--interval <ms>` sets the sampling interval
+  (default 10ms, the Go runtime's own rate), `--thread <name>` picks
+  goroutines (`--thread *` all of them, `--regex` to match names),
+  `--combine-all`/`--not-combined` change how they are grouped, and
+  `--only-ticks-over <ms>` keeps only the ticks that took at least that long.
+  `stop` takes `--comment <text>`, `--separate-parent-calls`, and
+  `--save-to-file`, which writes `plugins/spark/profile-<date>.sparkprofile`
+  (open it in the viewer) instead of uploading. Golem's tick goroutine is the
+  viewer's **Server thread**, and each frame is attributed to the plugin whose
+  Go module holds its package. With `--save-to-file`, spark also writes the
+  same samples, every goroutine included, as `profile-<date>.pprof` for
+  `go tool pprof` — a golem extra.
 - **`/spark tps`** (alias `cpu`) — TPS over the last 5s, 10s, 1m, 5m and 15m,
   tick durations (min/median/95th percentile/max) over 10s and 1m, and process
   and system CPU usage over 10s, 1m and 15m. `/tps` is replaced by the same
@@ -29,10 +45,13 @@ Paper finds the same plugin.
 
 ## Not yet
 
-- `/spark profiler`, `/spark tickmonitor`, `/spark gc`, `/spark gcmonitor`,
+- `/spark tickmonitor`, `/spark gc`, `/spark gcmonitor`,
   `/spark heapsummary`, `/spark heapdump`, the background profiler and the live
   viewer are being ported. Until the live viewer is, `/spark health` and
-  `/spark health dashboard` upload a report as `upload` does.
+  `/spark health dashboard` upload a report as `upload` does, and
+  `/spark profiler open` and `trust-viewer` say it is not supported.
+- **`/spark profiler --alloc` and `--lock`** (allocation and lock profiling)
+  are being ported; they answer that the mode is not supported.
 - **Game rules and data packs** in the viewer's world statistics: golem's
   plugin API cannot list game rules with their defaults
   ([golem-mc/golem#58](https://github.com/golem-mc/golem/issues/58)) or the
@@ -72,7 +91,8 @@ each, as on Java (system properties have no Go counterpart):
 ## Permissions
 
 `spark` grants every command; `spark.<command>` grants one, named by its first
-alias: `spark.tps`, `spark.ping`, `spark.health`, `spark.activity`. All default to operators
+alias: `spark.profiler`, `spark.tps`, `spark.ping`, `spark.health`,
+`spark.activity`. All default to operators
 (level 2). `/tps` also accepts `bukkit.command.tps`.
 
 ## Differences from spark on Bukkit
@@ -87,6 +107,20 @@ alias: `spark.tps`, `spark.ping`, `spark.health`, `spark.activity`. All default 
   `GOMAXPROCS`/`GODEBUG` settings and the server's flags. The platform is
   named `golem`, with golem's module version. GC figures are the Go
   collector's (named `Go`): collections and their stop-the-world pauses.
+- **The profiler** is the Go runtime's CPU profiler, not async-profiler or a
+  thread dumper, so it sees only goroutines that are running on a CPU:
+  waiting and sleeping goroutines never appear (as with spark's
+  `--ignore-sleeping`, which is accepted and changes nothing), and neither
+  does `--force-java-sampler`. The viewer shows it as the async engine.
+  Goroutines have no names: a goroutine is shown under the function it was
+  started with (`server.(*Server).acceptLoop`), golem's tick goroutine as
+  `Server thread`, and `--thread` takes those names. A frame's class is its Go
+  package with the method's receiver (`github.com/golem-mc/golem/internal/server.(*Server)`)
+  and its method the rest (`tickLoop`). An `--interval` other than 10ms makes
+  the Go runtime print `cannot set cpu profile rate until previous profile has
+  finished` once per profile; the rate is set all the same. Only one CPU
+  profile can run in a process, so the profiler cannot start while golem's
+  `/perf` or anything else is profiling, and the other way round.
 - **Commands run on the tick goroutine**, not on a spark thread; anything slow
   (uploads, heap analysis) runs on its own goroutine and answers on the next
   tick.
