@@ -35,11 +35,12 @@ func PollGCSince(initial map[string]GCStats) map[string]GCStats {
 }
 
 // AvgTime is the mean pause per collection in milliseconds, 0 with none.
+// It keeps the fraction: Go's pauses are mostly well under a millisecond.
 func (s GCStats) AvgTime() float64 {
 	if s.Count == 0 {
 		return 0
 	}
-	return float64(s.Time.Milliseconds()) / float64(s.Count)
+	return float64(s.Time) / float64(time.Millisecond) / float64(s.Count)
 }
 
 // AvgFrequency is the mean milliseconds between collections over uptime.
@@ -47,5 +48,5 @@ func (s GCStats) AvgFrequency(uptime time.Duration) int64 {
 	if s.Count == 0 {
 		return 0
 	}
-	return int64((float64(uptime.Milliseconds()) - float64(s.Time.Milliseconds())) / float64(s.Count))
+	return int64((float64(uptime) - float64(s.Time)) / float64(time.Millisecond) / float64(s.Count))
 }

@@ -54,6 +54,14 @@ directory to read alongside (`git clone https://github.com/lucko/spark spark`).
   goroutine. `gatherMetadata` is spark's `SparkMetadata.gather`; the
   statistics it fills are in `statistics.go` and `world.go`.
 
+## GC notifications
+
+The JVM notifies listeners of each collection; Go does not.
+`monitor.GCMonitor` attaches a `runtime.AddCleanup` to an object nothing
+references. The cleanup runs after the collection that frees it, reads the
+collection from `debug.ReadGCStats` and `runtime/metrics`, and attaches
+itself to a new object. A notice that covers several cycles reports each one.
+
 ## The sampler
 
 spark samples Java threads' stacks itself (or through async-profiler); Go
