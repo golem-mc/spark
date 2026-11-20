@@ -114,15 +114,14 @@ func healthReport(p *Platform, sender plugin.CommandSender, r *Responder, args *
 		r.Reply(p.healthReportLines(args.Bool("memory"), args.Bool("network"))...)
 		return nil
 	}
-	p.healthReportUpload(r)
+	p.healthReportUpload(r, args.SubCommand() != "upload")
 	return nil
 }
 
-// healthReportUpload uploads the report for the viewer. The live dashboard
-// (the default sub-command) needs the viewer socket, so until that is
-// ported it uploads a report as upload does.
+// healthReportUpload uploads the report for the viewer; the dashboard (the
+// default) also opens a live viewer socket for it.
 // spark: HealthModule.healthReportUpload
-func (p *Platform) healthReportUpload(r *Responder) {
+func (p *Platform) healthReportUpload(r *Responder, dashboard bool) {
 	r.ReplyPrefixed(text.T("Generating server health report..."))
 	snap := p.snapshot(true)
 	async := r.Async()
@@ -130,6 +129,14 @@ func (p *Platform) healthReportUpload(r *Responder) {
 		data := &sparkproto.HealthData{Metadata: p.gatherMetadata(r.Sender(), p.startupGC, snap).health()}
 		if s := p.activeSampler(); s != nil {
 			data.TimeWindowStatistics = s.WindowStatistics()
+		}
+		if dashboard {
+			if socket, err := p.openHealthSocket(); err != nil {
+				async.ReplyPrefixed(text.T("An error occurred whilst opening the live viewer connection.", text.Red))
+				p.Server.Logger().Warn("Error whilst opening live viewer connection", "error", err)
+			} else {
+				data.ChannelInfo = socket.ChannelInfo()
+			}
 		}
 		url, err := p.upload(data, bytebin.HealthMediaType, "")
 		if err != nil {

@@ -68,6 +68,10 @@ type Env struct {
 	// OnComplete is called when the sampler stops by itself at AutoEnd, or
 	// fails; err is nil for the former. Called on the sampler's goroutine.
 	OnComplete func(s *Sampler, err error)
+	// OnWindowRotate is called when a window has ended and its samples are
+	// in the trees; OnStop when the sampler has stopped, for any reason.
+	// Both on the sampler's goroutine.
+	OnWindowRotate, OnStop func()
 }
 
 // Sampler is a running profiler.
@@ -182,6 +186,11 @@ func (s *Sampler) startSegment() (*segment, error) {
 func (s *Sampler) run(seg *segment) {
 	defer close(s.done)
 	defer cpuBusy.Store(false)
+	defer func() {
+		if s.env.OnStop != nil {
+			s.env.OnStop()
+		}
+	}()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	// A rate other than the runtime's rotates only when asked, so the
@@ -205,8 +214,11 @@ func (s *Sampler) run(seg *segment) {
 		pprof.StopCPUProfile()
 		err := s.addSegment(seg)
 		if !stop && err == nil {
-			s.rotateWindow(time.Now())
+			rotated := s.rotateWindow(time.Now())
 			seg, err = s.startSegment()
+			if rotated && err == nil && s.env.OnWindowRotate != nil {
+				s.env.OnWindowRotate()
+			}
 		}
 		if reply != nil {
 			reply <- err
@@ -235,12 +247,13 @@ func (s *Sampler) run(seg *segment) {
 func (s *Sampler) currentWindow() int { return int(s.window.Load()) }
 
 // rotateWindow moves to the window of now, measuring the one that ended
-// and pruning windows past the history. spark: JavaSampler.InsertDataTask
-func (s *Sampler) rotateWindow(now time.Time) {
+// and pruning windows past the history; it reports whether the window
+// changed. spark: JavaSampler.InsertDataTask
+func (s *Sampler) rotateWindow(now time.Time) bool {
 	w := windowOf(now)
 	previous := s.currentWindow()
 	if w == previous {
-		return
+		return false
 	}
 	s.mu.Lock()
 	s.windowStarts[w] = now
@@ -274,6 +287,7 @@ func (s *Sampler) rotateWindow(now time.Time) {
 		}
 	}
 	s.mu.Unlock()
+	return true
 }
 
 // measure records the statistics of window, which ends at end.

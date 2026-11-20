@@ -14,6 +14,7 @@ directory to read alongside (`git clone https://github.com/lucko/spark spark`).
 |---|---|---|
 | `spark.go` | The `spark` plugin: builds and enables the platform | `BukkitSparkPlugin` |
 | `internal/platform/` | The platform, `/spark` and its argument parsing, completion and replies, and one `module_*.go` per command module | `SparkPlatform`, `CommandManager`, `Arguments`, `CommandResponseHandler`, `TabCompleter`, `command/modules/*` |
+| `internal/viewer/` | The live viewer's bytesocks channel, signed packets and trusted keys; `viewertest` fakes bytesocks and the web viewer | `ws/*`, bytesocks-java-client |
 | `internal/sampler/` | The profiler: CPU profiles, the call trees, threads and their grouping, the viewer's export | `sampler/*` |
 | `internal/monitor/` | Tick rate and durations, CPU, memory, network, disk and ping monitors | `monitor/*` |
 | `internal/metric/` | The last hour of time series for the viewer's graphs | `metric/*` |
@@ -97,6 +98,15 @@ threads with `SIGPROF` and records the goroutine's stack and labels.
 - **Locks.** The tick goroutine takes only `tickMu`, a short lock on tick
   counts; parsing a profile happens on the sampler's goroutine under `mu`, so
   it never holds a tick up.
+
+## The live viewer
+
+A socket is a bytesocks channel (`GET /create`, then a websocket to the
+channel) on which spark's `RawPacket`s travel as base64 text, signed with
+the server's RSA-2048 key (SHA256withRSA). The payload uploaded to bytebin
+carries the channel and the server's public key. A sampler's sockets are
+sent a new profile from `sampler.Env.OnWindowRotate` and close in `OnStop`.
+Statistics are gathered on the tick goroutine and sent from another one.
 
 ## Deliberate differences
 

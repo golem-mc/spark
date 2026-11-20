@@ -3,6 +3,7 @@ module github.com/golem-mc/spark
 go 1.27.4
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/golem-mc/golem v0.0.0-20261120023403-875000896831
 	github.com/google/pprof v0.0.0-20261118010117-084b33a85f63
 	github.com/magiconair/properties v1.18.13

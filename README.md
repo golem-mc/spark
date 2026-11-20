@@ -27,13 +27,20 @@ Paper finds the same plugin.
   Go module holds its package. With `--save-to-file`, spark also writes the
   same samples, every goroutine included, as `profile-<date>.pprof` for
   `go tool pprof` — a golem extra.
+- **The live viewer.** `/spark profiler open` links to the running profile
+  in spark's web viewer, which follows it through a bytesocks channel: a new
+  profile every minute and fresh statistics every 10 seconds. The first time
+  a browser connects, the viewer shows the command that trusts it:
+  `/spark profiler trust-viewer --id <id>` (the key is kept in `trustedKeys`).
 - **`/spark tps`** (alias `cpu`) — TPS over the last 5s, 10s, 1m, 5m and 15m,
   tick durations (min/median/95th percentile/max) over 10s and 1m, and process
   and system CPU usage over 10s, 1m and 15m. `/tps` is replaced by the same
   report unless `overrideTpsCommand` is `false`.
 - **`/spark ping`** — the online players' pings now and over the last 15
   minutes; `--player <name>` for one player.
-- **`/spark health`** (alias `healthreport`) — `upload` uploads a health report
+- **`/spark health`** (alias `healthreport`) — `dashboard` (the default)
+  uploads a health report and keeps it live in the viewer, as the profiler's
+  live viewer does; `upload` uploads a health report
   to bytebin and prints its link in spark's web viewer: platform, system,
   memory, GC, TPS/MSPT, ping, players, per-world and per-chunk entity counts, game rules and data packs,
   `server.properties` (without secrets such as `rcon.password` and
@@ -63,9 +70,6 @@ Paper finds the same plugin.
 
 ## Not yet
 
-- The live viewer is being ported. Until it is, `/spark health` and `/spark health dashboard` upload a
-  report as `upload` does, and `/spark profiler open` and `trust-viewer` say
-  it is not supported.
 - **`/spark profiler --alloc` and `--lock`** (allocation and lock profiling)
   are being ported; they answer that the mode is not supported.
 
@@ -97,6 +101,8 @@ each, as on Java (system properties have no Go counterpart):
 |---|---|---|
 | `viewerUrl` | `https://spark.lucko.me/` | the web viewer links point to |
 | `bytebinUrl` | `https://spark-usercontent.lucko.me/` | where reports are uploaded |
+| `bytesocksHost` | `spark-usersockets.lucko.me` | the live viewer's relay, over TLS; a URL such as `http://localhost:8080` reaches one without |
+| `trustedKeys` | `[]` | the web viewers trusted with `trust-viewer` |
 | `overrideTpsCommand` | `true` | replace `/tps` with `/spark tps` |
 | `disableResponseBroadcast` | `false` | send command output only to its sender, not to everyone with the permission |
 | `backgroundProfiler` | `true` | run the background profiler; spark writes `true` here the first time |

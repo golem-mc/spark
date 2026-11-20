@@ -16,6 +16,7 @@ import (
 	"github.com/golem-mc/spark/internal/config"
 	"github.com/golem-mc/spark/internal/metric"
 	"github.com/golem-mc/spark/internal/monitor"
+	"github.com/golem-mc/spark/internal/viewer"
 )
 
 // Platform is one enabled spark.
@@ -29,6 +30,9 @@ type Platform struct {
 	// is appended to it.
 	ViewerURL string
 	Bytebin   *bytebin.Client
+	// Bytesocks and Keys are the live viewer's channels and keys.
+	Bytesocks *viewer.Client
+	Keys      *viewer.KeyStore
 	Activity  *activitylog.Log
 
 	Metrics  *metric.Metrics
@@ -44,6 +48,10 @@ type Platform struct {
 	sampler   *activeSampler
 	// The monitors /spark tickmonitor and gcmonitor toggle; tick goroutine
 	// only.
+	// healthSockets are the health dashboards' live viewers.
+	socketsMu     sync.Mutex
+	healthSockets []*viewer.Socket
+
 	tickMonitor *tickMonitor
 	gcMonitor   *monitor.GCMonitor
 	// latestCounts are the world counts last taken on the tick goroutine.
@@ -76,6 +84,13 @@ func New(srv plugin.Server) *Platform {
 		p.ViewerURL += "/"
 	}
 	p.Bytebin = bytebin.New(p.Config.String("bytebinUrl", "https://spark-usercontent.lucko.me/"), "spark-plugin")
+	p.Bytesocks = viewer.NewClient(p.Config.String("bytesocksHost", "spark-usersockets.lucko.me"), "spark-plugin")
+	p.Keys = viewer.NewKeyStore(p.Config.StringList("trustedKeys"), func(encoded []string) {
+		p.Config.Set("trustedKeys", encoded)
+		if err := p.Config.Save(); err != nil {
+			p.Server.Logger().Warn("Could not save the config", "error", err)
+		}
+	})
 	p.disableBroadcast = p.Config.Bool("disableResponseBroadcast", false)
 	for _, module := range []func(*Platform) []*Command{samplerCommands, healthCommands, tickMonitorCommands, gcCommands, heapCommands, activityCommands} {
 		p.commands = append(p.commands, module(p)...)
@@ -158,6 +173,12 @@ func (p *Platform) Disable() {
 	if p.tickMonitor != nil {
 		p.tickMonitor.close()
 	}
+	p.socketsMu.Lock()
+	for _, socket := range p.healthSockets {
+		socket.Close()
+	}
+	p.healthSockets = nil
+	p.socketsMu.Unlock()
 	if p.gcMonitor != nil {
 		p.gcMonitor.Close()
 	}
