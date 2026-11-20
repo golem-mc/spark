@@ -91,6 +91,9 @@ threads with `SIGPROF` and records the goroutine's stack and labels.
 - **Plugins.** A frame's class is its package (plus receiver), so the class
   sources map each package to the plugin with the longest `plugin.Info.Module`
   that holds it.
+- **The background profiler** is an ordinary sampler marked `Background`,
+  started in `Enable` and again after `/spark profiler stop`. It runs for as
+  long as the server does; pruning to 60 windows bounds its trees.
 - **Locks.** The tick goroutine takes only `tickMu`, a short lock on tick
   counts; parsing a profile happens on the sampler's goroutine under `mu`, so
   it never holds a tick up.

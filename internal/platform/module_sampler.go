@@ -315,7 +315,55 @@ func (p *Platform) profilerStop(r *Responder, args *Arguments) {
 	p.Server.Scheduler().RunAsync(func() {
 		s.Stop(false)
 		p.handleUpload(async, s, props, saveToFile, snap)
+		// A stopped profile, background or not, gives way to a new
+		// background one.
+		if p.startBackgroundProfiler() {
+			async.BroadcastPrefixed(text.Of(text.T("Restarted the background profiler. "),
+				text.T("(If you don't want this to happen, run: /"+commandName+" profiler cancel)", text.DarkGray)))
+		}
 	})
+}
+
+// startBackgroundProfiler starts the background profiler when the config
+// enables it, and reports whether it did.
+// spark: BackgroundSamplerManager.startSampler
+func (p *Platform) startBackgroundProfiler() bool {
+	if !p.Config.Bool("backgroundProfiler", true) {
+		return false
+	}
+	settings := sampler.Settings{
+		Background: true,
+		Interval:   time.Duration(p.Config.Int("backgroundProfilerInterval", 10)) * time.Millisecond,
+		Threads:    sampler.ParseThreads(p.Config.String("backgroundProfilerThreadDumper", "default")),
+		Grouper:    sampler.ParseGrouper(p.Config.String("backgroundProfilerThreadGrouper", "by-pool")),
+	}
+	_, err := p.startSampler(settings, func(_ *activeSampler, err error) {
+		if err != nil {
+			p.Server.Logger().Error("The background profiler failed", "error", err)
+		}
+	})
+	if err != nil {
+		p.Server.Logger().Warn("Failed to start background profiler.", "error", err)
+		return false
+	}
+	return true
+}
+
+// initBackgroundProfiler starts the background profiler as spark enables,
+// writing backgroundProfiler: true to the config the first time.
+// spark: BackgroundSamplerManager.initialise
+func (p *Platform) initBackgroundProfiler() {
+	if !p.Config.Bool("backgroundProfiler", true) {
+		return
+	}
+	if !p.Config.Contains("backgroundProfiler") {
+		p.Config.Set("backgroundProfiler", true)
+		if err := p.Config.Save(); err != nil {
+			p.Server.Logger().Warn("Could not save the config", "error", err)
+		}
+	}
+	p.Server.Logger().Info("Starting background profiler...")
+	p.startBackgroundProfiler()
 }
 
 func (p *Platform) exportProps(r *Responder, args *Arguments) exportProps {

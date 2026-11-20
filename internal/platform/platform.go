@@ -142,6 +142,7 @@ func (p *Platform) Enable() error {
 			p.Server.Logger().Warn("Could not override /tps", "error", err)
 		}
 	}
+	p.initBackgroundProfiler()
 	return nil
 }
 

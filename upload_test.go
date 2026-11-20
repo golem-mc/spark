@@ -21,8 +21,19 @@ type fakeBytebin struct {
 }
 
 // start runs a test server in a temporary directory, where the server and
-// spark write their files.
+// spark write their files, without the background profiler.
 func start(t *testing.T, opts ...plugintest.Option) *plugintest.Server {
+	t.Helper()
+	// plugintest never disables a server's plugins
+	// (golem-mc/golem#83), so a background profiler would keep the
+	// process's one CPU profile after its test.
+	t.Setenv("SPARK_BACKGROUNDPROFILER", "false")
+	return startWithBackground(t, opts...)
+}
+
+// startWithBackground is start with the background profiler running; the
+// test must cancel it before it ends.
+func startWithBackground(t *testing.T, opts ...plugintest.Option) *plugintest.Server {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	return plugintest.Start(t, opts...)

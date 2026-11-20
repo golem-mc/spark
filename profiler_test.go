@@ -45,7 +45,7 @@ func hasFrame(t *sparkproto.ThreadNode, method string) bool {
 // about two seconds of ticks: CPU samples need real time.
 func TestProfiler(t *testing.T) {
 	bin := startBytebin(t)
-	srv := start(t, plugintest.Ops("Alice"),
+	srv := startWithBackground(t, plugintest.Ops("Alice"),
 		plugintest.WithPlugins(append(plugin.Registered(), plugin.Registration{Name: "busywork", Plugin: busywork{}})...))
 	alice := srv.Join("Alice")
 	say := func(line string, ticks int, want ...string) string {
@@ -60,13 +60,16 @@ func TestProfiler(t *testing.T) {
 		return got
 	}
 
-	say("/spark profiler", 2, "The profiler isn't running!", "/spark profiler start")
-	say("/spark profiler start --timeout 5", 2, "The specified timeout is not long enough")
-	say("/spark profiler start", 2, "Starting a new profiler, please wait...", "Profiler is now running!",
-		"/spark profiler stop", "/spark profiler open")
+	say("/spark profiler", 2, "Profiler is already running!",
+		"It was started automatically when spark enabled and has been running in the background for")
+	// As in spark, start stops the background profiler before it checks its flags.
+	say("/spark profiler start --timeout 5", 2, "Stopping the background profiler before starting... please wait",
+		"The specified timeout is not long enough")
+	say("/spark profiler start", 2, "Starting a new profiler, please wait...", "Profiler is now running!", "/spark profiler stop", "/spark profiler open")
 	say("/spark profiler start", 25, "Profiler is already running!", "So far, it has profiled for")
 	say("/spark profiler stop --comment busy test", 10, "Stopping the profiler & uploading results, please wait...",
-		"Profiler stopped & upload complete!", "https://viewer.test/testkey")
+		"Profiler stopped & upload complete!", "https://viewer.test/testkey",
+		"Restarted the background profiler. (If you don't want this to happen, run: /spark profiler cancel)")
 
 	var data sparkproto.SamplerData
 	if !bin.get("application/x-spark-sampler", &data) {
@@ -86,11 +89,11 @@ func TestProfiler(t *testing.T) {
 	if len(data.TimeWindows) == 0 || data.TimeWindowStatistics[data.TimeWindows[0]] == nil {
 		t.Errorf("windows = %v", data.TimeWindows)
 	}
-	say("/spark profiler stop", 2, "There isn't an active profiler running.")
 
-	say("/spark profiler start --thread * --only-ticks-over 10", 10, "Profiler is now running!")
+	say("/spark profiler start --thread * --only-ticks-over 10", 10, "Stopping the background profiler", "Profiler is now running!")
 	say("/spark profiler stop --save-to-file", 10, "Profiler stopped & save complete!", "Data has been written to: ",
-		"You can view the profile file using the web app @ https://viewer.test/", "A pprof profile has been written to: ")
+		"You can view the profile file using the web app @ https://viewer.test/", "A pprof profile has been written to: ",
+		"Restarted the background profiler.")
 	dir := filepath.Join(filepath.Dir(srv.Host().DataDir()), "spark")
 	for _, pattern := range []string{"profile-*.sparkprofile", "profile-*.pprof"} {
 		if files, _ := filepath.Glob(filepath.Join(dir, pattern)); len(files) != 1 {
@@ -100,7 +103,10 @@ func TestProfiler(t *testing.T) {
 		}
 	}
 
-	say("/spark profiler start", 2, "Profiler is now running!")
-	say("/spark profiler cancel", 2, "Profiler has been cancelled.")
+	say("/spark profiler cancel", 2, "Profiler has been cancelled.") // frees the CPU profile for later tests
+	say("/spark profiler stop", 2, "There isn't an active profiler running.")
 	say("/spark activity", 2, "Profiler - ", "File: ", "Url: https://viewer.test/testkey")
+	if config, err := os.ReadFile(filepath.Join(dir, "config.json")); err != nil || !strings.Contains(string(config), `"backgroundProfiler": true`) {
+		t.Errorf("config.json: %s %v", config, err)
+	}
 }

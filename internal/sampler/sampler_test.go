@@ -2,6 +2,7 @@ package sampler
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +177,29 @@ func TestAutoEnd(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("the sampler did not stop at its end time")
+	}
+}
+
+// TestHistoryPruned moves a sampler an hour on and finds its first window
+// gone from the trees, the statistics and the pprof samples.
+func TestHistoryPruned(t *testing.T) {
+	s, err := Start(Settings{Threads: AllThreads(), Background: true}, Env{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Stop(true)
+	serverWork(100 * time.Millisecond)
+	if err := s.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Export(ExportOptions{}).Threads) == 0 {
+		t.Fatal("no samples")
+	}
+	s.rotateWindow(time.Now().Add((historySize + 1) * windowSize))
+	if data := s.Export(ExportOptions{}); len(data.Threads) != 0 || len(data.TimeWindows) != 0 {
+		t.Errorf("after an hour: %d threads, windows %v", len(data.Threads), data.TimeWindows)
+	}
+	if len(s.WindowStatistics()) != 0 || s.WritePprof(io.Discard) == nil {
+		t.Errorf("statistics %v, or pprof samples left", s.WindowStatistics())
 	}
 }
