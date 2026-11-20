@@ -38,6 +38,15 @@ Paper finds the same plugin.
   memory, allocation, world and ping graphs. `show` prints the report in chat;
   `--memory` adds the runtime's non-heap memory and heap areas, `--network`
   every interface.
+- **`/spark tickmonitor`** (alias `tickmonitoring`) — times the ticks for 120
+  ticks, then reports every tick more than 100% longer than that average;
+  `--threshold <percent>` changes the percentage, `--threshold-tick <ms>`
+  reports ticks longer than a duration instead, and collections are reported
+  too unless `--without-gc`. Run it again to stop.
+- **`/spark gc`** — the collector's average pause, collections and how often
+  they run since the server started. **`/spark gcmonitor`** (alias
+  `gcmonitoring`) toggles a report of every collection: its pause, whether it
+  was forced, and the heap it freed.
 - **`/spark activity`** (`activitylog`, `log`) — the uploads and files spark
   made, `--page <n>`, kept in `plugins/spark/activity.json`.
 - **`/spark`**, **`/spark help`** and tab completion of every sub-command and
@@ -45,8 +54,7 @@ Paper finds the same plugin.
 
 ## Not yet
 
-- `/spark tickmonitor`, `/spark gc`, `/spark gcmonitor`,
-  `/spark heapsummary`, `/spark heapdump`, the background profiler and the live
+- `/spark heapsummary`, `/spark heapdump`, the background profiler and the live
   viewer are being ported. Until the live viewer is, `/spark health` and
   `/spark health dashboard` upload a report as `upload` does, and
   `/spark profiler open` and `trust-viewer` say it is not supported.
@@ -92,7 +100,7 @@ each, as on Java (system properties have no Go counterpart):
 
 `spark` grants every command; `spark.<command>` grants one, named by its first
 alias: `spark.profiler`, `spark.tps`, `spark.ping`, `spark.health`,
-`spark.activity`. All default to operators
+`spark.tickmonitor`, `spark.gc`, `spark.gcmonitor`, `spark.activity`. All default to operators
 (level 2). `/tps` also accepts `bukkit.command.tps`.
 
 ## Differences from spark on Bukkit
@@ -107,6 +115,12 @@ alias: `spark.profiler`, `spark.tps`, `spark.ping`, `spark.health`,
   `GOMAXPROCS`/`GODEBUG` settings and the server's flags. The platform is
   named `golem`, with golem's module version. GC figures are the Go
   collector's (named `Go`): collections and their stop-the-world pauses.
+- **Garbage collection.** Go has one concurrent collector, reported as `Go`
+  where a JVM has young and old generations. A collection's duration is its
+  stop-the-world pauses, usually well under a millisecond. Its cause is
+  `forced` for a `runtime.GC` and left out otherwise, and the heap before it is
+  estimated from the previous collection's live heap plus what was allocated
+  since.
 - **The profiler** is the Go runtime's CPU profiler, not async-profiler or a
   thread dumper, so it sees only goroutines that are running on a CPU:
   waiting and sleeping goroutines never appear (as with spark's

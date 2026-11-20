@@ -42,6 +42,10 @@ type Platform struct {
 
 	samplerMu sync.Mutex
 	sampler   *activeSampler
+	// The monitors /spark tickmonitor and gcmonitor toggle; tick goroutine
+	// only.
+	tickMonitor *tickMonitor
+	gcMonitor   *monitor.GCMonitor
 	// latestCounts are the world counts last taken on the tick goroutine.
 	latestCounts atomic.Pointer[metric.WorldCounts]
 
@@ -73,7 +77,7 @@ func New(srv plugin.Server) *Platform {
 	}
 	p.Bytebin = bytebin.New(p.Config.String("bytebinUrl", "https://spark-usercontent.lucko.me/"), "spark-plugin")
 	p.disableBroadcast = p.Config.Bool("disableResponseBroadcast", false)
-	for _, module := range []func(*Platform) []*Command{samplerCommands, healthCommands, activityCommands} {
+	for _, module := range []func(*Platform) []*Command{samplerCommands, healthCommands, tickMonitorCommands, gcCommands, activityCommands} {
 		p.commands = append(p.commands, module(p)...)
 	}
 	return p
@@ -104,6 +108,9 @@ func (p *Platform) Enable() error {
 		p.Ticks.OnTickStart(e.Tick, time.Now(), p.Server.Ticks().Rate())
 		if s := p.activeSampler(); s != nil {
 			s.OnTickStart(e.Tick)
+		}
+		if p.tickMonitor != nil {
+			p.tickMonitor.onTick(e.Tick, time.Now())
 		}
 	}, plugin.ListenOptions{Priority: plugin.Lowest})
 	plugin.Listen(p.Server, func(e *plugin.ServerTickEndEvent) {
@@ -146,6 +153,12 @@ func (p *Platform) Disable() {
 	if s := p.activeSampler(); s != nil {
 		p.unsetSampler(s)
 		s.Stop(true)
+	}
+	if p.tickMonitor != nil {
+		p.tickMonitor.close()
+	}
+	if p.gcMonitor != nil {
+		p.gcMonitor.Close()
 	}
 	for _, t := range p.tasks {
 		t.Cancel()
