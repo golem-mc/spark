@@ -5,8 +5,8 @@ github.com/ebitengine/purego v0.11.3/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakv
 github.com/go-ole/go-ole v1.2.6/go.mod h1:pprOEPIfldk/42T2oK7lQ4v4JSDwmV0As9GaiUsvbm0=
 github.com/go-ole/go-ole v1.3.0 h1:Dt6ye7+vXGIKZ7Xtk4s6/xVdGDQynvom7xCFEdWr6uE=
 github.com/go-ole/go-ole v1.3.0/go.mod h1:5LS6F96DhAwUc7C+1HLexzMXY1xGRSryjyPPKW6zv78=
-github.com/golem-mc/golem v0.0.0-20261120023403-875000896831 h1:yKlTjVLkKzeg9QpNRITXoWatK1SIRq3udbfLfWcYFKU=
-github.com/golem-mc/golem v0.0.0-20261120023403-875000896831/go.mod h1:oFlU6ijSdw7lNo/gxfCuANfYyklqkw5a9qGaUrbLcms=
+github.com/golem-mc/golem v0.0.0-20261120093924-fa0857cc5847 h1:t4QqW3ni/J+oxViq06LRqje+OoUgeVLl77hiFOHPgfU=
+github.com/golem-mc/golem v0.0.0-20261120093924-fa0857cc5847/go.mod h1:oFlU6ijSdw7lNo/gxfCuANfYyklqkw5a9qGaUrbLcms=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 github.com/google/pprof v0.0.0-20261118010117-084b33a85f63 h1:dTH7+vX2yD0Xq3wXeU6R1s5uUuJC8o9sDW8g2k4bAg4=

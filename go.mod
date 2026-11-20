@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/golem-mc/golem v0.0.0-20261120023403-875000896831
+	github.com/golem-mc/golem v0.0.0-20261120093924-fa0857cc5847
 	github.com/google/pprof v0.0.0-20261118010117-084b33a85f63
 	github.com/magiconair/properties v1.18.13
 	github.com/shirou/gopsutil/v4 v4.26.10
