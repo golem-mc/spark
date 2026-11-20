@@ -27,7 +27,7 @@ Run these as an operator in game or from the console:
 ```
 
 A profile ends with a link to spark's web viewer. `/spark profiler open` opens
-a live view of the running profile, and `/spark health` makes a health report.
+a live view of the running profile, and `/spark health` uploads a health report and gives a link to it.
 A background profiler runs from startup and keeps the last hour, so
 `/spark profiler open` and `/spark health` have data straight away.
 
@@ -40,7 +40,7 @@ tab completion offers every sub-command and flag.
 
 | Command | What it does | Permission |
 |---|---|---|
-| `/spark profiler start [--timeout <seconds>] [--thread <name\|*>] [--only-ticks-over <ms>] [--interval <ms>] [--alloc] [--lock] [--regex] [--combine-all] [--not-combined]` | start sampling; `--alloc` profiles allocations, `--lock` lock contention | `spark.profiler` |
+| `/spark profiler start [--timeout <seconds>] [--thread <name\|*>] [--only-ticks-over <ms>] [--interval <ms>] [--alloc] [--lock] [--regex] [--combine-all] [--not-combined]` | start sampling; `--alloc` profiles allocations (`--alloc-live-only` keeps only live ones), `--lock` lock contention | `spark.profiler` |
 | `/spark profiler info` | show the running profile | `spark.profiler` |
 | `/spark profiler open` | follow the running profile live in the browser | `spark.profiler` |
 | `/spark profiler stop [--comment <text>] [--save-to-file]` | stop and upload the report (or save it) | `spark.profiler` |
@@ -54,8 +54,8 @@ Alias: `/spark sampler`.
 |---|---|---|
 | `/spark tps` | TPS, tick durations and CPU usage; replaces `/tps` (see `overrideTpsCommand`) | `spark.tps` |
 | `/spark ping [--player <name>]` | players' ping now and over the last 15 minutes | `spark.ping` |
-| `/spark health [upload]` | a health report in chat; `upload` sends it to the web viewer | `spark.health` |
-| `/spark health show [--memory] [--network]` | memory or network details in chat | `spark.health` |
+| `/spark health [dashboard\|upload]` | uploads a health report and gives a link; `dashboard`, the default, also keeps it live, `upload` does not | `spark.health` |
+| `/spark health show [--memory] [--network]` | the health report in chat, or just its memory or network details | `spark.health` |
 | `/spark tickmonitor [--threshold <percent>] [--threshold-tick <ms>] [--without-gc]` | toggle reports of ticks that run long | `spark.tickmonitor` |
 
 Aliases: `/spark cpu` for `tps`, `healthreport` for `health`, `tickmonitoring`
@@ -124,8 +124,8 @@ points, see [spark's documentation](https://spark.lucko.me/docs/Command-Usage).
   is one collector (`Go`), collections are timed by their pauses, and the
   maximum heap is `GOMEMLIMIT` or the machine's memory.
 - The profiler sees only goroutines running on a CPU; sleeping or waiting
-  ones never appear. `--ignore-sleeping` and `--force-java-sampler` are
-  accepted and change nothing.
+  ones never appear. `--ignore-sleeping` and `--force-java-sampler`
+  (spark's options) are accepted and change nothing.
 - Threads are shown by the function they started with; golem's tick loop is
   `Server thread`, and `--thread` takes those names.
 - Only one CPU profile can run at once: set `backgroundProfiler` to `false`
