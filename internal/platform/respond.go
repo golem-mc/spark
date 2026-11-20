@@ -55,10 +55,22 @@ func (r *Responder) deliver(fn func()) {
 	fn()
 }
 
+// target is who replies go to. The console's sender in a command is the
+// dispatch's own, which collects output only while the command runs, so a
+// later reply goes to the server console instead.
+func (r *Responder) target() plugin.CommandSender {
+	if _, player := r.sender.(plugin.Player); r.async && !player {
+		if console := r.p.Server.Console(); r.sender.Name() == console.Name() {
+			return console
+		}
+	}
+	return r.sender
+}
+
 // Reply sends msgs to the sender, joined by newlines into one message.
 func (r *Responder) Reply(msgs ...plugin.Text) {
 	msg := text.Lines(msgs)
-	r.deliver(func() { r.sender.SendMessage(msg) })
+	r.deliver(func() { r.target().SendMessage(msg) })
 }
 
 // ReplyPrefixed sends msg to the sender after spark's prefix.
@@ -74,7 +86,7 @@ func (r *Responder) Broadcast(msgs ...plugin.Text) {
 	}
 	msg := text.Lines(msgs)
 	r.deliver(func() {
-		for _, s := range r.p.recipients(r.alias, r.sender) {
+		for _, s := range r.p.recipients(r.alias, r.target()) {
 			s.SendMessage(msg)
 		}
 	})
