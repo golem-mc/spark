@@ -47,6 +47,12 @@ Paper finds the same plugin.
   they run since the server started. **`/spark gcmonitor`** (alias
   `gcmonitoring`) toggles a report of every collection: its pause, whether it
   was forced, and the heap it freed.
+- **`/spark heapsummary`** — uploads the heap in use to the viewer (or saves
+  `plugins/spark/heapsummary-<date>.sparkheap` with `--save-to-file`), grouped
+  by where the objects were allocated; `--run-gc-before` collects first.
+- **`/spark heapdump`** — writes `plugins/spark/heap-<date>.heapdump`;
+  `--compress gzip` also writes a `.gz`, and `--include-non-live` skips the
+  collection that otherwise leaves only live objects.
 - **`/spark activity`** (`activitylog`, `log`) — the uploads and files spark
   made, `--page <n>`, kept in `plugins/spark/activity.json`.
 - **`/spark`**, **`/spark help`** and tab completion of every sub-command and
@@ -54,10 +60,10 @@ Paper finds the same plugin.
 
 ## Not yet
 
-- `/spark heapsummary`, `/spark heapdump`, the background profiler and the live
-  viewer are being ported. Until the live viewer is, `/spark health` and
-  `/spark health dashboard` upload a report as `upload` does, and
-  `/spark profiler open` and `trust-viewer` say it is not supported.
+- The background profiler and the live viewer are being ported. Until the
+  live viewer is, `/spark health` and `/spark health dashboard` upload a
+  report as `upload` does, and `/spark profiler open` and `trust-viewer` say
+  it is not supported.
 - **`/spark profiler --alloc` and `--lock`** (allocation and lock profiling)
   are being ported; they answer that the mode is not supported.
 - **Game rules and data packs** in the viewer's world statistics: golem's
@@ -100,7 +106,8 @@ each, as on Java (system properties have no Go counterpart):
 
 `spark` grants every command; `spark.<command>` grants one, named by its first
 alias: `spark.profiler`, `spark.tps`, `spark.ping`, `spark.health`,
-`spark.tickmonitor`, `spark.gc`, `spark.gcmonitor`, `spark.activity`. All default to operators
+`spark.tickmonitor`, `spark.gc`, `spark.gcmonitor`, `spark.heapsummary`,
+`spark.heapdump`, `spark.activity`. All default to operators
 (level 2). `/tps` also accepts `bukkit.command.tps`.
 
 ## Differences from spark on Bukkit
@@ -121,6 +128,14 @@ alias: `spark.profiler`, `spark.tps`, `spark.ping`, `spark.health`,
   `forced` for a `runtime.GC` and left out otherwise, and the heap before it is
   estimated from the previous collection's live heap plus what was allocated
   since.
+- **Heap summary.** Go objects carry no class, so the summary lists
+  allocation sites (`github.com/golem-mc/golem/internal/world.(*Chunk).load`)
+  where spark lists classes. It comes from the runtime's heap profile, which
+  samples about one allocation per 512 KiB, so its counts are estimates.
+- **Heap dump** files are in the Go runtime's own format
+  (`runtime/debug.WriteHeapDump`), not hprof, so JVM tools such as Eclipse MAT
+  cannot open them. Writing one stops the server for its duration, as on Java.
+  As in spark, `gzip` is the only compression.
 - **The profiler** is the Go runtime's CPU profiler, not async-profiler or a
   thread dumper, so it sees only goroutines that are running on a CPU:
   waiting and sleeping goroutines never appear (as with spark's
