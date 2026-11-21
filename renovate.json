@@ -27,14 +27,21 @@
       "automergeStrategy": "squash"
     },
     {
-      "description": "Indirect Go modules are updated too, not only direct ones.",
+      "description": "Indirect Go modules follow golem's daily bump: golem-launcher refuses a plugin build whose module versions differ from golem's.",
       "matchManagers": [
         "gomod"
       ],
       "matchDepTypes": [
         "indirect"
       ],
-      "enabled": true
+      "enabled": false
+    },
+    {
+      "description": "github.com/magiconair/properties is also a direct dependency of golem, so it follows golem's daily bump too.",
+      "matchPackageNames": [
+        "github.com/magiconair/properties"
+      ],
+      "enabled": false
     },
     {
       "description": "The go directive in go.mod and the toolchain in mise.toml move together.",
