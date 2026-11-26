@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/golem-mc/spark/compare/v0.1.0...v0.1.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/golem-mc/golem to v0.2.0 ([#33](https://github.com/golem-mc/spark/issues/33)) ([2b5a091](https://github.com/golem-mc/spark/commit/2b5a0913a49a4c155495f388a4f8ab7c0b89cee1))
+
 ## 0.1.0 (2026-11-21)
 
 
